@@ -1,5 +1,6 @@
 # NIFTY
 *Near-Infrared Fitting for T and Y Dwarfs*
+
 *Kevin Hainline and Jake Helton*
 
 NIFTY is a code designed to fit JWST NIRCam and MIRI photometry for cold brown 

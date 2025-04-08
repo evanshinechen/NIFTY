@@ -1,0 +1,15 @@
+name: NIFTY
+channels:
+  - conda-forge
+  - http://ssb.stsci.edu/astroconda
+  - defaults
+dependencies:
+  - python
+  - ipython
+  - numpy
+  - tdqm
+  - scipy
+  - astropy
+  - matplotlib
+  - scikit-learn
+  - emcee
