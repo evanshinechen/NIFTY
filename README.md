@@ -19,15 +19,15 @@ when convergence isn't quick.
 Installation can be done through conda, or micromamba: 
 
 ```
-% conda env create -f environment.yml
+(base) % conda env create -f environment.yml
 ```
 
-This will create a new conda environment, `NIFTY`, from which you can run `NIFTY`.
+This will create a new environment, `NIFTY`, from which you can run `NIFTY`.
 
 You'll also need to install some packages through pip:
 ```
-% conda activate NIFTY
-% python -m pip install astro-sedpy corner spectres xarray
+(base) % conda activate NIFTY
+(NIFTY) % python -m pip install astro-sedpy corner spectres xarray
 ```
 
 ## Creating the Interpolation Files
