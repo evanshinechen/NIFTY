@@ -7,7 +7,7 @@ dependencies:
   - python
   - ipython
   - numpy
-  - tdqm
+  - tqdm
   - scipy
   - astropy
   - matplotlib

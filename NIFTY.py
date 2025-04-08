@@ -329,7 +329,7 @@ if __name__ == '__main__':
 	
 	# ...or, just use a single ID
 	if (args.id_number):
-		ID_numbers = np.zeros(1)
+		ID_numbers = np.zeros(1, dtype = int)
 		ID_numbers[0] = int(args.id_number)
 		#number_input_objects = len(ID_numbers)
 		if (args.id_number_list):
@@ -358,7 +358,7 @@ if __name__ == '__main__':
 	photometry_fits = fits.open(photometry_file, memmap = True)
 	all_ID = photometry_fits['CIRC'].data['ID'].astype(int)
 	
-	if (number_objects > 0):
+	if (number_objects > 1):
 		time_for_MCMC_convergence = np.zeros(number_objects)-9999
 
 	# Go through the individual sources and fit them one by one! 
@@ -522,7 +522,7 @@ if __name__ == '__main__':
 			print('    '+survey_stub+f'-{int(object_ID):06d}, emcee fitting took {(t2-t1)/60.0:.1f} minutes to converge.')
 			print("     - - - - - - - - ")
 	
-			if (number_objects > 0):
+			if (number_objects > 1):
 				time_for_MCMC_convergence[objid] = (t2-t1)/60.0
 	
 			 
@@ -747,7 +747,7 @@ if __name__ == '__main__':
 			del model_spectroscopy
 			gc.collect()
 
-	if (number_objects > 0):
+	if (number_objects > 1):
 		min_time_index = np.argmin(time_for_MCMC_convergence[np.where(time_for_MCMC_convergence > 0)[0]])
 		max_time_index = np.argmax(time_for_MCMC_convergence[np.where(time_for_MCMC_convergence > 0)[0]])
 		median_time = np.median(time_for_MCMC_convergence[np.where(time_for_MCMC_convergence > 0)[0]])
