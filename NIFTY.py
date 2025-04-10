@@ -19,18 +19,12 @@ import argparse
 import gc
 
 # Imports necessary science modules
-import sedpy
-import scipy
 import emcee
 import corner
 import numpy as np
 import pandas as pd
-
-from scipy.interpolate import RegularGridInterpolator
-
-#from astropy.io import ascii
 from astropy.io import fits
-#from astropy.table import Table
+from scipy.interpolate import RegularGridInterpolator
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -221,6 +215,16 @@ parser.add_argument(
   required=False
 )
 
+# command line argument list of objects
+parser.add_argument(
+  '-output',
+  help="Optional output folder",
+  action="store",
+  type=str,
+  dest="output_folder",
+  required=False
+)
+
 args=parser.parse_args()
 
 
@@ -251,7 +255,7 @@ if __name__ == '__main__':
 	
 	print(" ")
 	print("▗▖  ▗▖▗▄▄▄▖▗▄▄▄▖▗▄▄▄▖▗▖  ▗▖   Near-Infrared")
-	print("▐▛▚▖▐▌  █  ▐▌     █   ▝▚▞▘    Fitting for ")
+	print("▐▛▚▖▐▌  █  ▐▌     █   ▝▚▞▘    Fitting for")
 	print("▐▌ ▝▜▌  █  ▐▛▀▀▘  █    ▐▌     T and Y Dwarfs")
 	print("▐▌  ▐▌▗▄█▄▖▐▌     █    ▐▌     Kevin Hainline and Jake Helton")
 	print(" ")
@@ -264,11 +268,10 @@ if __name__ == '__main__':
 	# # # # # # # # # # # # # # #
 	
 	print(" - - - - - - - - ")
-	filters_file = args.filters#'BD_NIRCam_filters.txt'
+	filters_file = args.filters
 	print("Opening up filters file: "+filters_file)
 	filter_name = np.loadtxt(filters_file, dtype = 'U10')[:,0]
 	filter_central_wavelength = np.loadtxt(filters_file, dtype = 'U10')[:,1].astype(float)
-	filter_path = np.loadtxt(filters_file, dtype = 'U200')[:,2]
 	number_nircam_filters = len(np.where(filter_central_wavelength < 5)[0])
 	number_miri_filters = len(np.where(filter_central_wavelength > 5)[0])
 	number_filters = len(filter_name)
@@ -348,7 +351,13 @@ if __name__ == '__main__':
 		sys.exit('No ID numbers provided')
 
 	# Creating the optional output folder
-	optional_output_folder = output_name_stub+'_output/'
+	if (args.output_folder):
+		if (not args.output_folder.endswith('/')):
+			args.output_folder = args.output_folder + '/'
+		optional_output_folder = args.output_folder
+	else:
+		optional_output_folder = output_name_stub+'_output/'
+	
 	if (not os.path.isdir(optional_output_folder)):
 		os.mkdir(optional_output_folder)
 
