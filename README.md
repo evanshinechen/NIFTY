@@ -1,3 +1,4 @@
+<img src="nifty_logo_zoom.png" alt="NIFTY logo" width="300"/>
 # NIFTY
 *Near-Infrared Fitting for T and Y Dwarfs*
 
