@@ -28,14 +28,15 @@ from scipy.interpolate import RegularGridInterpolator
 def get_teff_logg_from_file_name(best_fitting_template_name):
 	
 	teff = float(output_spec_name.split('_')[2][1:])
-	grav = float(output_spec_name.split('_')[3][1:])
+	logg = float(output_spec_name.split('_')[3][1:])
 	mh_raw = output_spec_name.split('_')[4]
 	if mh_raw.startswith('m'):
 		mh = -1.0 * float(mh_raw[1:])
 	else:
 		mh = float(mh_raw[1:])
 	
-	return teff, grav, mh
+	# We need to make sure that we return the logarithm of reported temperature
+	return np.log10(teff), logg, mh
 
 # Opening up the filter file (this can change in the future)
 filters_file = 'BD_NIRCam_MIRI_filters.txt'
@@ -68,7 +69,7 @@ for x in range(0, number_directories):
 	# Set up the final output files
 	if (x == 0):
 		output_teff = np.zeros(number_spectra)
-		output_grav = np.zeros(number_spectra)
+		output_logg = np.zeros(number_spectra)
 		output_mh = np.zeros(number_spectra)
 	
 		# these should be in terms of erg/s/cm^2/Hz
@@ -78,7 +79,7 @@ for x in range(0, number_directories):
 	# If you're in the second folder, set up new subsample directories
 	else:
 		subsample_teff = np.zeros(number_spectra)
-		subsample_grav = np.zeros(number_spectra)
+		subsample_logg = np.zeros(number_spectra)
 		subsample_mh = np.zeros(number_spectra)
 	
 		# these should be in terms of erg/s/cm^2/Hz
@@ -90,10 +91,10 @@ for x in range(0, number_directories):
 		output_spec_name = spectra_path[q].split('/')[-1]
 		
 		if (x == 0):
-			output_teff[q], output_grav[q], output_mh[q] = get_teff_logg_from_file_name(output_spec_name)
+			output_teff[q], output_logg[q], output_mh[q] = get_teff_logg_from_file_name(output_spec_name)
 
 		else:
-			subsample_teff[q], subsample_grav[q], subsample_mh[q] = get_teff_logg_from_file_name(output_spec_name)
+			subsample_teff[q], subsample_logg[q], subsample_mh[q] = get_teff_logg_from_file_name(output_spec_name)
 
 		#ds = xarray.load_dataset(spectra_path[q])
 			
@@ -131,7 +132,7 @@ for x in range(0, number_directories):
 				
 	if (x > 0):
 		output_teff = np.append(output_teff, subsample_teff)
-		output_grav = np.append(output_grav, subsample_grav)
+		output_logg = np.append(output_logg, subsample_logg)
 		output_mh = np.append(output_mh, subsample_mh)
 	
 		# these should be in terms of erg/s/cm^2/Hz
@@ -139,7 +140,7 @@ for x in range(0, number_directories):
 		output_spectra = np.hstack((output_spectra, subsample_spectra))
 
 Teff_values = np.unique(output_teff)
-logg_values = np.unique(output_grav)
+logg_values = np.unique(output_logg)
 mh_values = np.unique(output_mh)
 
 ATMO2020_phot_grid = np.empty((len(Teff_values), len(logg_values), len(mh_values), output_fluxes.shape[0]))
@@ -149,7 +150,7 @@ for teff in range(0, len(Teff_values)):
 		for mh in range(0, len(mh_values)):
 			line_index = np.where(
 				(output_teff == Teff_values[teff]) & 
-				(output_grav == logg_values[logg]) & 
+				(output_logg == logg_values[logg]) & 
 				(output_mh == mh_values[mh]))[0] 
 			ATMO2020_phot_grid[teff, logg, mh, :] = output_fluxes[:,line_index[0]]/1e-23/1e-9
 			ATMO2020_spec_grid[teff, logg, mh, :] = output_spectra[:,line_index[0]]
@@ -159,7 +160,7 @@ ATMO2020_spec_interp = RegularGridInterpolator((Teff_values, logg_values, mh_val
 
 output_values_data = {}
 output_values_data['T_eff'] = np.unique(output_teff)
-output_values_data['grav'] = np.unique(output_grav)
+output_values_data['logg'] = np.unique(output_logg)
 output_values_data['mh'] = np.unique(output_mh)
 output_values_data['filters'] = filter_name
 output_values_data['wave'] = lower_res_wave

@@ -31,7 +31,8 @@ def get_teff_logg_Kzz_from_file_name(best_fitting_template_name):
 	mh = float(best_fitting_template_name.split('/')[-1].split('_')[8])
 	co = float(best_fitting_template_name.split('/')[-1].split('_')[10].split('.nc')[0])
 	
-	return teff, kzz, grav, mh, co
+	# We need to make sure that we return the logarithm of reported temperature, and put the log(g) into cgs
+	return np.log10(teff), kzz, np.log10(grav)+2.0, mh, co
 
 # Opening up the filter file (this can change in the future)
 filters_file = 'BD_NIRCam_MIRI_filters.txt'
@@ -45,7 +46,7 @@ number_filters = len(filter_name)
 sonora_path = sys.argv[1]
 
 model_file_temp_min = np.array([275.0, 350.0, 425.0, 500.0, 575.0, 700.0, 850.0, 1000.0, 1300.0, 1600.0, 1900.0, 2200.0]) 
-model_file_temp_max = np.array([325.0, 400.0, 475.0, 550.0, 650.0, 800.0, 950.0, 1200.0, 1400.0, 1800.0, 2100.0, 2400.0])
+model_file_temp_max = np.array([325.0, 400.0, 475.0, 550.0, 650.0, 800.0, 950.0, 1200.0, 1500.0, 1800.0, 2100.0, 2400.0])
 
 number_directories = len(model_file_temp_min)
 
@@ -64,7 +65,6 @@ for x in range(0, number_directories):
 	if (x == 0):
 		output_teff = np.zeros(number_spectra)
 		output_kzz = np.zeros(number_spectra)
-		output_grav = np.zeros(number_spectra)
 		output_logg = np.zeros(number_spectra)
 		output_mh = np.zeros(number_spectra)
 		output_co = np.zeros(number_spectra)
@@ -77,7 +77,6 @@ for x in range(0, number_directories):
 	else:
 		subsample_teff = np.zeros(number_spectra)
 		subsample_kzz = np.zeros(number_spectra)
-		subsample_grav = np.zeros(number_spectra)
 		subsample_logg = np.zeros(number_spectra)
 		subsample_mh = np.zeros(number_spectra)
 		subsample_co = np.zeros(number_spectra)
@@ -91,11 +90,9 @@ for x in range(0, number_directories):
 		output_spec_name = spectra_path[q].split('/')[-1]
 		
 		if (x == 0):
-			output_teff[q], output_kzz[q], output_grav[q], output_mh[q], output_co[q] = get_teff_logg_Kzz_from_file_name(output_spec_name)
-			output_logg[q] = np.log10(output_grav[q])
+			output_teff[q], output_kzz[q], output_logg[q], output_mh[q], output_co[q] = get_teff_logg_Kzz_from_file_name(output_spec_name)
 		else:
-			subsample_teff[q], subsample_kzz[q], subsample_grav[q], subsample_mh[q], subsample_co[q] = get_teff_logg_Kzz_from_file_name(output_spec_name)
-			subsample_logg[q] = np.log10(subsample_grav[q])
+			subsample_teff[q], subsample_kzz[q], subsample_logg[q], subsample_mh[q], subsample_co[q] = get_teff_logg_Kzz_from_file_name(output_spec_name)
 		
 		ds = xarray.load_dataset(spectra_path[q])
 	
@@ -135,7 +132,6 @@ for x in range(0, number_directories):
 	if (x > 0):
 		output_teff = np.append(output_teff, subsample_teff)
 		output_kzz = np.append(output_kzz, subsample_kzz)
-		output_grav = np.append(output_grav, subsample_grav)
 		output_logg = np.append(output_logg, subsample_logg)
 		output_mh = np.append(output_mh, subsample_mh)
 		output_co = np.append(output_co, subsample_co)
@@ -144,25 +140,25 @@ for x in range(0, number_directories):
 		output_fluxes = np.hstack((output_fluxes, subsample_fluxes))
 		output_spectra = np.hstack((output_spectra, subsample_spectra))
 
+# This helps to span the gaps in the Sonora Elf Owl g rid.
 extrapolation_Teff_values = np.unique(output_teff)
-extrapolation_grav_values = np.unique(output_grav)[1:]
 extrapolation_logg_values = np.unique(output_logg)[1:]
 extrapolation_kzz_values = np.unique(output_kzz)
 extrapolation_mh_values = np.unique(output_mh)
-extrapolation_co_values = np.unique(output_co)[[0,1,2]]
+extrapolation_co_values = np.unique(output_co)[:3]
 
 ngood = 0
 nbad = 0
-extrapolation_Sonora_phot_grid = np.empty((len(extrapolation_Teff_values), len(extrapolation_grav_values), len(extrapolation_kzz_values), len(extrapolation_mh_values), len(extrapolation_co_values), output_fluxes.shape[0]))
-extrapolation_Sonora_spec_grid = np.empty((len(extrapolation_Teff_values), len(extrapolation_grav_values), len(extrapolation_kzz_values), len(extrapolation_mh_values), len(extrapolation_co_values), output_spectra.shape[0]))
+extrapolation_Sonora_phot_grid = np.empty((len(extrapolation_Teff_values), len(extrapolation_logg_values), len(extrapolation_kzz_values), len(extrapolation_mh_values), len(extrapolation_co_values), output_fluxes.shape[0]))
+extrapolation_Sonora_spec_grid = np.empty((len(extrapolation_Teff_values), len(extrapolation_logg_values), len(extrapolation_kzz_values), len(extrapolation_mh_values), len(extrapolation_co_values), output_spectra.shape[0]))
 for teff in range(0, len(extrapolation_Teff_values)):
-    for logg in range(0, len(extrapolation_grav_values)):
+    for logg in range(0, len(extrapolation_logg_values)):
     	for kzz in range(0, len(extrapolation_kzz_values)):
 	    	for mh in range(0, len(extrapolation_mh_values)):
 	    		for co in range(0, len(extrapolation_co_values)):
 	    			line_index = np.where(
 	    				(output_teff == extrapolation_Teff_values[teff]) & 
-	    				(output_grav == extrapolation_grav_values[logg]) & 
+	    				(output_logg == extrapolation_logg_values[logg]) & 
 	    				(output_kzz == extrapolation_kzz_values[kzz]) & 
 	    				(output_mh == extrapolation_mh_values[mh]) & 
 	    				(output_co == extrapolation_co_values[co]))[0] 
@@ -171,31 +167,34 @@ for teff in range(0, len(extrapolation_Teff_values)):
 	    				extrapolation_Sonora_spec_grid[teff, logg, kzz, mh, co, :] = output_spectra[:,line_index[0]]
 	    				ngood = ngood + 1
 	    			else:
-	    				print(Teff_values[teff], logg_values[logg], kzz_values[kzz], mh_values[mh], co_values[co])
+	    				print(extrapolation_Teff_values[teff], extrapolation_logg_values[logg], extrapolation_kzz_values[kzz], extrapolation_mh_values[mh], extrapolation_co_values[co])
 	    				nbad = nbad + 1
 
 # And create the phot interpolator 
 print("Creating the grid interpolator")
-Sonora_phot_extrapolator = RegularGridInterpolator((extrapolation_Teff_values, extrapolation_grav_values, extrapolation_kzz_values, extrapolation_mh_values, extrapolation_co_values), extrapolation_Sonora_phot_grid, method='linear', bounds_error = False, fill_value=None)
-Sonora_spec_extrapolator = RegularGridInterpolator((extrapolation_Teff_values, extrapolation_grav_values, extrapolation_kzz_values, extrapolation_mh_values, extrapolation_co_values), extrapolation_Sonora_spec_grid, method='linear', bounds_error = False, fill_value=None)
+Sonora_phot_extrapolator = RegularGridInterpolator((extrapolation_Teff_values, extrapolation_logg_values, extrapolation_kzz_values, extrapolation_mh_values, extrapolation_co_values), extrapolation_Sonora_phot_grid, method='linear', bounds_error = False, fill_value=None)
+Sonora_spec_extrapolator = RegularGridInterpolator((extrapolation_Teff_values, extrapolation_logg_values, extrapolation_kzz_values, extrapolation_mh_values, extrapolation_co_values), extrapolation_Sonora_spec_grid, method='linear', bounds_error = False, fill_value=None)
 
 Teff_values = np.unique(output_teff)
-grav_values = np.unique(output_grav)
 logg_values = np.unique(output_logg)
 kzz_values = np.unique(output_kzz)
 mh_values = np.unique(output_mh)
 co_values = np.unique(output_co)
 
+n_total = 0
+n_extrapolations = 0
+
 Sonora_phot_grid = np.empty((len(Teff_values), len(logg_values), len(kzz_values), len(mh_values), len(co_values), output_fluxes.shape[0]))
 Sonora_spec_grid = np.empty((len(Teff_values), len(logg_values), len(kzz_values), len(mh_values), len(co_values), output_spectra.shape[0]))
 for teff in range(0, len(Teff_values)):
-    for logg in range(0, len(grav_values)):
+    for logg in range(0, len(logg_values)):
     	for kzz in range(0, len(kzz_values)):
 	    	for mh in range(0, len(mh_values)):
 	    		for co in range(0, len(co_values)):
+	    			n_total = n_total + 1
 	    			line_index = np.where(
 	    				(output_teff == Teff_values[teff]) & 
-	    				(output_grav == grav_values[logg]) & 
+	    				(output_logg == logg_values[logg]) & 
 	    				(output_kzz == kzz_values[kzz]) & 
 	    				(output_mh == mh_values[mh]) & 
 	    				(output_co == co_values[co]))[0] 
@@ -204,9 +203,12 @@ for teff in range(0, len(Teff_values)):
 	    				Sonora_phot_grid[teff, logg, kzz, mh, co, :] = output_fluxes[:,line_index[0]]/1e-23/1e-9
 	    				Sonora_spec_grid[teff, logg, kzz, mh, co, :] = output_spectra[:,line_index[0]]
 	    			else:
-	    				print("Extrapolating!")
-	    				Sonora_phot_grid[teff, logg, kzz, mh, co, :] = Sonora_phot_extrapolator([Teff_values[teff], grav_values[logg], kzz_values[kzz], mh_values[mh], co_values[co]])[0]
-	    				Sonora_spec_grid[teff, logg, kzz, mh, co, :] = Sonora_spec_extrapolator([Teff_values[teff], grav_values[logg], kzz_values[kzz], mh_values[mh], co_values[co]])[0]
+	    				#print("Extrapolating!")
+	    				n_extrapolations = n_extrapolations + 1
+	    				Sonora_phot_grid[teff, logg, kzz, mh, co, :] = Sonora_phot_extrapolator([Teff_values[teff], logg_values[logg], kzz_values[kzz], mh_values[mh], co_values[co]])[0]
+	    				Sonora_spec_grid[teff, logg, kzz, mh, co, :] = Sonora_spec_extrapolator([Teff_values[teff], logg_values[logg], kzz_values[kzz], mh_values[mh], co_values[co]])[0]
+
+print("I had to extrapolate "+str(n_extrapolations)+" out of "+str(n_total)+" parameter combinations. ("+str(round(100*(n_extrapolations/n_total),2))+"%)")
 
 #...and then I package up everything, the real fluxes, and the extrapolated fluxes in the 13 cases, into one big new interpolator
 Sonora_phot_interp = RegularGridInterpolator((Teff_values, logg_values, kzz_values, mh_values, co_values), Sonora_phot_grid, method='linear', fill_value=None)
@@ -215,7 +217,7 @@ Sonora_spec_interp = RegularGridInterpolator((Teff_values, logg_values, kzz_valu
 output_values_data = {}
 output_values_data['T_eff'] = np.unique(output_teff)
 output_values_data['kzz'] = np.unique(output_kzz)
-output_values_data['grav'] = np.unique(output_logg)
+output_values_data['logg'] = np.unique(output_logg)
 output_values_data['mh'] = np.unique(output_mh)
 output_values_data['co'] = np.unique(output_co)
 output_values_data['filters'] = filter_name
@@ -224,6 +226,6 @@ output_values_data['phot_interpolator'] = Sonora_phot_interp
 output_values_data['spec_interpolator'] = Sonora_spec_interp
 
 # and save this to a pickle file which can be read in for fitting. 
-output_values_filename = 'Sonora_interp.pkl'
+output_values_filename = 'Sonora_v2_interp.pkl'
 with open(output_values_filename, 'wb') as f:
 	pickle.dump(output_values_data, f)

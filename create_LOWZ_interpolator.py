@@ -33,7 +33,8 @@ def get_teff_logg_Kzz_from_file_name(atmo_readme, best_fitting_template_name):
 	mh = atmo_readme['METALLICITY'][source_index]
 	co = atmo_readme['CTOO'][source_index]
 	
-	return teff, kzz, grav, mh, co
+	# We need to make sure that we return the logarithm of reported temperature
+	return np.log10(teff), kzz, grav, mh, co
 
 # Opening up the filter file (this can change in the future)
 filters_file = 'BD_NIRCam_MIRI_filters.txt'
@@ -54,7 +55,7 @@ print("    number spectra = "+str(number_spectra))
 
 output_teff = np.zeros(number_spectra)
 output_kzz = np.zeros(number_spectra)
-output_grav = np.zeros(number_spectra)
+output_logg = np.zeros(number_spectra)
 output_mh = np.zeros(number_spectra)
 output_co = np.zeros(number_spectra)
 
@@ -70,7 +71,7 @@ for q in tqdm(range(number_spectra)):
 	
 	output_spec_name = spectra_path[q].split('/')[-1]
 	
-	output_teff[q], output_kzz[q], output_grav[q], output_mh[q], output_co[q] = get_teff_logg_Kzz_from_file_name(atmo_readme, output_spec_name)
+	output_teff[q], output_kzz[q], output_logg[q], output_mh[q], output_co[q] = get_teff_logg_Kzz_from_file_name(atmo_readme, output_spec_name)
 		
 	spectra_wave = np.loadtxt(spectra_path[q])[:,0] # micron
 	spectra_flux_Wm2m = np.loadtxt(spectra_path[q])[:,1] # flambda, [W/m2/m]
@@ -117,7 +118,7 @@ for q in tqdm(range(number_spectra)):
 
 # So, here I limit to only > 600 K, and only use the C/O values of 0.1 and 0.85...
 extrapolation_Teff_values = np.unique(output_teff)[2:]
-extrapolation_logg_values = np.unique(output_grav)
+extrapolation_logg_values = np.unique(output_logg)
 extrapolation_kzz_values = np.unique(output_kzz)
 extrapolation_mh_values = np.unique(output_mh)
 extrapolation_co_values = np.unique(output_co)[[0,2]]
@@ -135,7 +136,7 @@ for teff in range(0, len(extrapolation_Teff_values)):
 	    			ntotal = ntotal + 1
 	    			line_index = np.where(
 	    				(output_teff == extrapolation_Teff_values[teff]) & 
-	    				(output_grav == extrapolation_logg_values[logg]) & 
+	    				(output_logg == extrapolation_logg_values[logg]) & 
 	    				(output_kzz == extrapolation_kzz_values[kzz]) & 
 	    				(output_mh == extrapolation_mh_values[mh]) & 
 	    				(output_co == extrapolation_co_values[co]))[0] 
@@ -144,7 +145,7 @@ for teff in range(0, len(extrapolation_Teff_values)):
 	    				extrapolation_LOWZ_spec_grid[teff, logg, kzz, mh, co, :] = output_spectra[:,line_index[0]]
 	    				ngood = ngood + 1
 	    			else:
-	    				print(Teff_values[teff], logg_values[logg], kzz_values[kzz], mh_values[mh], co_values[co])
+	    				print(extrapolation_Teff_values[teff], extrapolation_logg_values[logg], extrapolation_kzz_values[kzz], extrapolation_mh_values[mh], extrapolation_co_values[co])
 	    				nbad = nbad + 1
 
 #...and I create an extrapolator, which only gets used when there's not a  
@@ -153,14 +154,14 @@ LOWZ_phot_exterp = RegularGridInterpolator((extrapolation_Teff_values, extrapola
 LOWZ_spec_exterp = RegularGridInterpolator((extrapolation_Teff_values, extrapolation_logg_values, extrapolation_kzz_values, extrapolation_mh_values, extrapolation_co_values), extrapolation_LOWZ_spec_grid, method='linear', bounds_error = False, fill_value=None)
 
 Teff_values = np.unique(output_teff)
-logg_values = np.unique(output_grav)
+logg_values = np.unique(output_logg)
 kzz_values = np.unique(output_kzz)
 mh_values = np.unique(output_mh)
 co_values = np.unique(output_co)
 
-nbad = 0
-ngood = 0
-ntotal = 0
+n_total = 0
+n_extrapolations = 0
+
 LOWZ_phot_grid = np.empty((len(Teff_values), len(logg_values), len(kzz_values), len(mh_values), len(co_values), output_fluxes.shape[0]))
 LOWZ_spec_grid = np.empty((len(Teff_values), len(logg_values), len(kzz_values), len(mh_values), len(co_values), output_spectra.shape[0]))
 for teff in range(0, len(Teff_values)):
@@ -168,22 +169,22 @@ for teff in range(0, len(Teff_values)):
     	for kzz in range(0, len(kzz_values)):
 	    	for mh in range(0, len(mh_values)):
 	    		for co in range(0, len(co_values)):
-	    			ntotal = ntotal + 1
+	    			n_total = n_total + 1
 	    			line_index = np.where(
 	    				(output_teff == Teff_values[teff]) & 
-	    				(output_grav == logg_values[logg]) & 
+	    				(output_logg == logg_values[logg]) & 
 	    				(output_kzz == kzz_values[kzz]) & 
 	    				(output_mh == mh_values[mh]) & 
 	    				(output_co == co_values[co]))[0] 
 	    			if (len(line_index) > 0):
 	    				LOWZ_phot_grid[teff, logg, kzz, mh, co, :] = output_fluxes[:,line_index[0]]/1e-23/1e-9
 	    				LOWZ_spec_grid[teff, logg, kzz, mh, co, :] = output_spectra[:,line_index[0]]
-	    				ngood = ngood + 1
 	    			else:
-	    				print("Extrapolating!")
+	    				n_extrapolations = n_extrapolations + 1
 	    				LOWZ_phot_grid[teff, logg, kzz, mh, co, :] = LOWZ_phot_exterp([Teff_values[teff], logg_values[logg], kzz_values[kzz], mh_values[mh], co_values[co]])[0]
 	    				LOWZ_spec_grid[teff, logg, kzz, mh, co, :] = LOWZ_spec_exterp([Teff_values[teff], logg_values[logg], kzz_values[kzz], mh_values[mh], co_values[co]])[0]
-	    				nbad = nbad + 1
+
+print("I had to extrapolate "+str(n_extrapolations)+" out of "+str(n_total)+" parameter combinations. ("+str(round(100*(n_extrapolations/n_total),2))+"%)")
 
 #...and then I package up everything, the real fluxes, and the extrapolated fluxes in the 13 cases, into one big new interpolator
 LOWZ_phot_interp = RegularGridInterpolator((Teff_values, logg_values, kzz_values, mh_values, co_values), LOWZ_phot_grid, method='linear', fill_value=None)
@@ -192,7 +193,7 @@ LOWZ_spec_interp = RegularGridInterpolator((Teff_values, logg_values, kzz_values
 output_values_data = {}
 output_values_data['T_eff'] = np.unique(output_teff)
 output_values_data['kzz'] = np.unique(output_kzz)
-output_values_data['grav'] = np.unique(output_grav)
+output_values_data['logg'] = np.unique(output_logg)
 output_values_data['mh'] = np.unique(output_mh)
 output_values_data['co'] = np.unique(output_co)
 output_values_data['filters'] = filter_name

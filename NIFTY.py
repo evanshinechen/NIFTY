@@ -69,13 +69,13 @@ def log_likelihood(theta, flux_nJy, error_nJy):
 	if ((model_to_use == 'SonoraElfOwl') or (model_to_use == 'LOWZ')):
 		Teff, logg, kzz, mh, co, d = theta
 		
-		try: model_flux_nJy = model_phot_interp([Teff, logg, kzz, mh, co])[0]#[0:14]
+		try: model_flux_nJy = model_phot_interp([np.log10(Teff), logg, kzz, mh, co])[0]#[0:14]
 		except ValueError: return -np.inf
 
 	if (model_to_use == 'ATMO2020'):
 		Teff, logg, mh, d = theta
 		
-		try: model_flux_nJy = model_phot_interp([Teff, logg, mh])[0]#[0:14]
+		try: model_flux_nJy = model_phot_interp([np.log10(Teff), logg, mh])[0]#[0:14]
 		except ValueError: return -np.inf
 
 	object_radius = 0.10276 * 2.2555823856078E-8 # in pc
@@ -236,7 +236,7 @@ if __name__ == '__main__':
 	if (model_to_use == 'SonoraElfOwl'):
 		model_name = 'Sonora Elf Owl'
 		output_name_stub = model_name.replace(' ','_')
-		model_grid_interpolator = 'Sonora_interp.pkl'
+		model_grid_interpolator = 'Sonora_v2_interp.pkl'
 	elif (model_to_use == 'ATMO2020'):
 		model_name = 'ATMO2020'
 		output_name_stub = model_name.replace(' ','_')
@@ -244,7 +244,7 @@ if __name__ == '__main__':
 	elif (model_to_use == 'LOWZ'):
 		model_name = 'LOWZ'
 		output_name_stub = model_name.replace(' ','_')
-		model_grid_interpolator = 'lOWZ_interp.pkl'
+		model_grid_interpolator = 'LOWZ_interp.pkl'
 	else:
 		sys.exit('Not a valid model')
 	
@@ -294,8 +294,8 @@ if __name__ == '__main__':
 	with open(model_grid_interpolator, 'rb') as inp:
 		model_interp_object = pickle.load(inp)
 	
-	Teff_values = model_interp_object['T_eff']
-	logg_values = model_interp_object['grav']
+	Teff_values = 10**(model_interp_object['T_eff'])
+	logg_values = model_interp_object['logg']
 	mh_values = model_interp_object['mh']
 	if ((model_to_use == 'SonoraElfOwl') or (model_to_use == 'LOWZ')):
 		kzz_values = model_interp_object['kzz']
@@ -306,7 +306,7 @@ if __name__ == '__main__':
 	model_spec_interp = model_interp_object['spec_interpolator']
 	
 	print("  The model parameter range explored:")
-	print("   Teff: "+str(np.min(Teff_values))+' to '+str(np.max(Teff_values)))
+	print("   Teff: "+str(round(np.min(Teff_values),1))+' to '+str(round(np.max(Teff_values),1)))
 	print("   log(g): "+str(np.min(np.round(logg_values,2)))+' to '+str(np.max(np.round(logg_values,2))))
 	if ((model_to_use == 'SonoraElfOwl') or (model_to_use == 'LOWZ')):
 		print("   kzz: "+str(np.min(kzz_values))+' to '+str(np.max(kzz_values)))
@@ -465,7 +465,7 @@ if __name__ == '__main__':
 				labels = [
 					r'$T_{\mathrm{eff}}/\mathrm{K}$',
 					r'$\mathrm{log}_{10} \left( g \right)$',
-					r'$K_{\mathrm{zz}}$',
+					r'$\mathrm{log}_{10} \left( K_{\mathrm{zz}} \right)$',
 					r'[M/H]',
 					r'[C/O]',
 					r'$d/\mathrm{kpc}$',
@@ -549,11 +549,11 @@ if __name__ == '__main__':
 				
 				if ((model_to_use == 'SonoraElfOwl') or (model_to_use == 'LOWZ')):
 					#model_photometry.append([model_phot_interp([sample[0], sample[1], sample[2], sample[3], sample[4]])[0][0:14]])
-					model_photometry.append([model_phot_interp([sample[0], sample[1], sample[2], sample[3], sample[4]])[0]])
+					model_photometry.append([model_phot_interp([np.log10(sample[0]), sample[1], sample[2], sample[3], sample[4]])[0]])
 					extended_samples.append([sample[0], sample[1],  sample[2], sample[3], sample[4], sample[5]/1000])
 				if (model_to_use == 'ATMO2020'):
 					#model_photometry.append([model_phot_interp([sample[0], sample[1], sample[2]])[0][0:14]])
-					model_photometry.append([model_phot_interp([sample[0], sample[1], sample[2]])[0]])
+					model_photometry.append([model_phot_interp([np.log10(sample[0]), sample[1], sample[2]])[0]])
 					extended_samples.append([sample[0], sample[1],  sample[2], sample[3]/1000])
 			
 			print("     - - - - - - - - ")
@@ -565,11 +565,12 @@ if __name__ == '__main__':
 				data=np.array(extended_samples),
 				labels=labels,
 				show_titles=True,
+				#title_fmt='.0f', # I think that the number of significant digits is fine! 
 				bins=40,
 				levels=[0.68, 0.95, 0.99],
 				quantiles=[0.16, 0.50, 0.84],
-				title_kwargs={'fontsize': 12},
-				label_kwargs={'fontsize': 20},
+				title_kwargs={'fontsize': 10},
+				label_kwargs={'fontsize': 15},
 				plot_datapoints=False,
 				scale_hist=False,
 				smooth1d=False,
@@ -613,9 +614,9 @@ if __name__ == '__main__':
 			sample_object_radius = np.zeros(len(samples[:,0]))
 			for index, sample in enumerate(samples):
 				if ((model_to_use == 'SonoraElfOwl') or (model_to_use == 'LOWZ')):
-					spectrum_ergscm2Agn = model_spec_interp([sample[0], sample[1], sample[2], sample[3], sample[4]])[0] # in erg/s/cm^2/Angstrom
+					spectrum_ergscm2Agn = model_spec_interp([np.log10(sample[0]), sample[1], sample[2], sample[3], sample[4]])[0] # in erg/s/cm^2/Angstrom
 				if (model_to_use == 'ATMO2020'):
-					spectrum_ergscm2Agn = model_spec_interp([sample[0], sample[1], sample[2]])[0] # in erg/s/cm^2/Angstrom
+					spectrum_ergscm2Agn = model_spec_interp([np.log10(sample[0]), sample[1], sample[2]])[0] # in erg/s/cm^2/Angstrom
 				
 				spectrum_nJy = flambda_to_fnu(model_interp_object['wave'], spectrum_ergscm2Agn)/1e-23/1e-9
 			
