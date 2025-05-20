@@ -7,12 +7,12 @@
 
 NIFTY is a code designed to fit JWST NIRCam and MIRI photometry for cold brown 
 dwarfs with the LOWZ (Meisner et al. 2021), ATMO2020 (Philips et al. 2020), or Sonora 
-Elf Owl (Mukherjee et al. 2024) models, in a Bayesian framework, using the emcee
-sampler (https://emcee.readthedocs.io/en/stable/user/sampler/). 
+Elf Owl v2 (Mukherjee et al. 2024, Wogan et al. 2025) v2 models, in a Bayesian framework, 
+using the emcee sampler (https://emcee.readthedocs.io/en/stable/user/sampler/). 
 
-The code creates interpolation grids from the models themselves, and then runs a fit 
-directly on the input photometry, producing a corner plot, a fit SED, and a file
-with the 16th, 50th, and 84th percentiles on the fit parameters. In our tests,
+The code creates interpolation grids in log space from the models themselves, and then 
+runs a fit directly on the input photometry, producing a corner plot, a fit SED, and 
+a file with the 16th, 50th, and 84th percentiles on the fit parameters. In our tests,
 fits take < 10 minutes per object for ~14 photometric bands, but some take longer
 when convergence isn't quick. 
 
@@ -43,7 +43,7 @@ will create a pickle file that is used by NIFTY in the fitting.
 (NIFTY) % python create_SonoraElfOwl_interpolator.py /Path/to/Sonora_Elf_Owl/
 (NIFTY) % python create_ATMO2020_interpolator.py /Path/to/meisner_2023/
 ```
-This will produce `LOWZ_interp.pkl`, `Sonora_interp.pkl`, and `ATMO2020_interp.pkl`, which
+This will produce `LOWZ_interp.pkl`, `Sonora_v2_interp.pkl`, and `ATMO2020_interp.pkl`, which
 should stay in the same directory as where NIFTY is run. You'll only need to create these
 once. Some of these models are fairly small, but the Sonora Elf Owl models are many, many GB,
 and it will take a few hours to create the interpolator. 
