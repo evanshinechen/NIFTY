@@ -1,0 +1,112 @@
+{
+  "filter_columns": {
+    "F090W": {
+      "extension": "CIRC",
+      "flux": "F090W_CIRC3",
+      "error": "F090W_CIRC3_e",
+      "wavelength": 0.902
+    },
+    "F115W": {
+      "extension": "CIRC",
+      "flux": "F115W_CIRC3",
+      "error": "F115W_CIRC3_e",
+      "wavelength": 1.154
+    },
+    "F150W": {
+      "extension": "CIRC",
+      "flux": "F150W_CIRC3",
+      "error": "F150W_CIRC3_e",
+      "wavelength": 1.501
+    },
+    "F162M": {
+      "extension": "CIRC",
+      "flux": "F162M_CIRC3",
+      "error": "F162M_CIRC3_e",
+      "wavelength": 1.624
+    },
+    "F182M": {
+      "extension": "CIRC",
+      "flux": "F182M_CIRC3",
+      "error": "F182M_CIRC3_e",
+      "wavelength": 1.845
+    },
+    "F200W": {
+      "extension": "CIRC",
+      "flux": "F200W_CIRC3",
+      "error": "F200W_CIRC3_e",
+      "wavelength": 1.989
+    },
+    "F210M": {
+      "extension": "CIRC",
+      "flux": "F210M_CIRC3",
+      "error": "F210M_CIRC3_e",
+      "wavelength": 2.096
+    },
+    "F250M": {
+      "extension": "CIRC",
+      "flux": "F250M_CIRC3",
+      "error": "F250M_CIRC3_e",
+      "wavelength": 2.503
+    },
+    "F277W": {
+      "extension": "CIRC",
+      "flux": "F277W_CIRC3",
+      "error": "F277W_CIRC3_e",
+      "wavelength": 2.762
+    },
+    "F300M": {
+      "extension": "CIRC",
+      "flux": "F300M_CIRC3",
+      "error": "F300M_CIRC3_e",
+      "wavelength": 2.996
+    },
+    "F335M": {
+      "extension": "CIRC",
+      "flux": "F335M_CIRC3",
+      "error": "F335M_CIRC3_e",
+      "wavelength": 3.362
+    },
+    "F356W": {
+      "extension": "CIRC",
+      "flux": "F356W_CIRC3",
+      "error": "F356W_CIRC3_e",
+      "wavelength": 3.568
+    },
+    "F410M": {
+      "extension": "CIRC",
+      "flux": "F410M_CIRC3",
+      "error": "F410M_CIRC3_e",
+      "wavelength": 4.082
+    },
+    "F444W": {
+      "extension": "CIRC",
+      "flux": "F444W_CIRC3",
+      "error": "F444W_CIRC3_e",
+      "wavelength": 4.408
+    },
+    "F560W": {
+      "extension": "MIRI",
+      "flux": "F560W_CIRC3",
+      "error": "F560W_CIRC3_e",
+      "wavelength": 5.600
+    },
+    "F770W": {
+      "extension": "MIRI",
+      "flux": "F770W_CIRC3",
+      "error": "F770W_CIRC3_e",
+      "wavelength": 7.700
+    },
+    "F1000W": {
+      "extension": "MIRI",
+      "flux": "F1000W_CIRC3",
+      "error": "F1000W_CIRC3_e",
+      "wavelength": 10.00
+    },
+    "F1280W": {
+      "extension": "MIRI",
+      "flux": "F1280W_CIRC3",
+      "error": "F1280W_CIRC3_e",
+      "wavelength": 12.80
+    }
+  }
+}

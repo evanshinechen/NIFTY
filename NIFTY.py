@@ -12,6 +12,7 @@ import os
 import ast
 import sys
 import time
+import json
 import warnings
 import pickle
 warnings.filterwarnings('ignore')
@@ -29,6 +30,134 @@ from scipy.interpolate import RegularGridInterpolator
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.rcParams['text.usetex'] = True
+
+# This function takes in either a fits or a txt file from the user, along with an
+# object ID, and returns the flux and error catalog
+def load_flux_file(
+	object_id,                  # int: The ID of the object to find
+	photometry_path,            # str: Path to the file
+	config,                     # config filter from the json file
+	model_interp_object,        # Model interpolator
+	filetype="fits",            # str: One of ["fits", "csv", "txt"]
+	min_rel_err=0.05            # float: Minimum relative error floor
+):
+	"""
+	Returns:
+		fluxes: numpy array of length len(filters)
+		flux_errors: numpy array of same shape
+		used_indices: list of indices in `filters` that were successfully found
+	"""
+	number_interp_filters = len(model_interp_object['filters'])
+	
+	# For fits file input, with hdu extensions and filter names/errors defined
+	# in the config json filters file.	
+	if (filetype == 'fits'):
+		photometry_fits = fits.open(photometry_path, memmap = True)
+		all_ID = photometry_fits['CIRC'].data['ID']
+	
+		object_index = np.where(all_ID == object_ID)[0]
+		if (len(object_index) == 0):
+			print("Object ID"+str(object_ID)+" not found! Skipping this object")
+			return None, None, np.array([])
+
+		object_index = object_index[0]
+				
+		object_flux = np.zeros(number_interp_filters)-9999
+		object_flux_errors = np.zeros(number_interp_filters)-9999
+		used_indices = []
+		print("    Getting object fluxes for ID "+str(object_ID))
+		for q, filt in enumerate(model_interp_object["filters"]):
+
+			if filt not in config["filter_columns"]:
+				continue  # User didn't provide this filter, so we can skip things. 
+
+			col_info = config["filter_columns"][filt]
+			ext = col_info["extension"]
+			flux_col = col_info["flux"]
+			err_col = col_info["error"]
+			used_indices.append(q)
+			
+			try:
+				flux_val = photometry_fits[ext].data[flux_col][object_index]
+				if not np.isfinite(flux_val):
+					continue
+			
+				err_val = photometry_fits[ext].data[err_col][object_index]
+				if not np.isfinite(err_val):
+					continue
+			
+				if (err_val / flux_val) < min_rel_err and (err_val / flux_val) > 0:
+					err_val = flux_val * min_rel_err
+					print(f"     Updating flux error in {filt} to minimum relative error.")
+			
+				object_flux[q] = flux_val
+				object_flux_errors[q] = err_val
+							
+			except KeyError as e:
+				print(f"Missing column for filter {filt}: {e}")
+				continue
+
+	# For text file input, with filter column names/errors defined
+	# in the config json filters file.	
+	elif (filetype == 'txt'):
+
+		try:
+			photometry_data = pd.read_csv(photometry_path, sep=r'\s+', comment="#")
+		except Exception as e:
+			raise ValueError(f"Could not parse text file '{photometry_path}'. Make sure it's whitespace-delimited.\nSee README for expected format.\nOriginal error: {e}")
+		
+		all_ID = photometry_data["ID"].values
+		
+		object_index = np.where(all_ID == object_id)[0]
+		if len(object_index) == 0:
+			print(f"Object ID {object_id} not found! Skipping this object")
+			return None, None, np.array([])
+		
+		object_index = object_index[0]
+
+		object_flux = np.zeros(number_interp_filters)-9999
+		object_flux_errors = np.zeros(number_interp_filters)-9999
+		used_indices = []
+		print("    Getting object fluxes for ID "+str(object_ID))
+		for q, filt in enumerate(model_interp_object["filters"]):
+
+			if filt not in config["filter_columns"]:
+				continue  # User didn't provide this filter, so we can skip things. 
+
+			col_info = config["filter_columns"][filt]
+			ext = col_info["extension"]
+			flux_col = col_info["flux"]
+			err_col = col_info["error"]
+			used_indices.append(q)
+			
+			try:
+				flux_val = photometry_data[flux_col][object_index]
+				if not np.isfinite(flux_val):
+					continue
+			
+				err_val = photometry_data[err_col][object_index]
+				if not np.isfinite(err_val):
+					continue
+			
+				if (err_val / flux_val) < min_rel_err and (err_val / flux_val) > 0:
+					err_val = flux_val * min_rel_err
+					print(f"     Updating flux error in {filt} to minimum relative error.")
+			
+				object_flux[q] = flux_val
+				object_flux_errors[q] = err_val
+							
+			except KeyError as e:
+				print(f"Missing column for filter {filt}: {e}")
+				continue
+
+		
+	else:
+		raise ValueError(f"Unsupported filetype: {filetype}")
+
+	if len(used_indices) == 0:
+		print(f"No matching filters found in config for object {object_id}.")
+		
+	return object_flux, object_flux_errors, np.array(used_indices, dtype=int)
 
 # The priors are currently just set to flat, spanning the full range
 def log_prior(theta, dmin=1e+0, dmax=2e+4):
@@ -124,6 +253,9 @@ def pretty_ID_at_top(ID, model_to_use):
 
 	print(" * * * * * * * * * * * * * * * * * * * * * "+extra_star)
 
+def calculate_chisq(flux, model, error):
+	return np.sum(np.square((flux-model)/error))
+
 ######################
 # Required Arguments #
 ######################
@@ -140,13 +272,13 @@ parser.add_argument(
   required=True
 )
 
-# Filter File
+# Json Filter File
 parser.add_argument(
-  '-filters','--filter_file',
-  help="NIRCam or MIRI Filters to Fit",
+  '-config_file','--config_file',
+  help="NIRCam or MIRI Filters to Fit (json)",
   action="store",
   type=str,
-  dest="filters",
+  dest="config_file",
   required=True
 )
 
@@ -167,16 +299,6 @@ parser.add_argument(
   action="store",
   type=str,
   dest="name_stub",
-  required=True
-)
-
-# JADES Aperture Size
-parser.add_argument(
-  '-aperture','--aperture_size',
-  help="JADES Aperture Size",
-  action="store",
-  type=str,
-  dest="aperture_size",
   required=True
 )
 
@@ -268,10 +390,18 @@ if __name__ == '__main__':
 	# # # # # # # # # # # # # # #
 	
 	print(" - - - - - - - - ")
-	filters_file = args.filters
-	print("Opening up filters file: "+filters_file)
-	filter_name = np.loadtxt(filters_file, dtype = 'U10')[:,0]
-	filter_central_wavelength = np.loadtxt(filters_file, dtype = 'U10')[:,1].astype(float)
+	filters_file = args.config_file
+	print("Opening up config/filters json file: "+filters_file)
+
+	with open(filters_file, 'r') as f:
+		config = json.load(f)
+
+	filter_name = list(config["filter_columns"].keys())
+	filter_central_wavelength = np.array([
+		config["filter_columns"][f]["wavelength"] for f in filter_name
+	])	
+	wavelength_lookup = {f: config["filter_columns"][f]["wavelength"] for f in filter_name}
+	
 	number_nircam_filters = len(np.where(filter_central_wavelength < 5)[0])
 	number_miri_filters = len(np.where(filter_central_wavelength > 5)[0])
 	number_filters = len(filter_name)
@@ -284,6 +414,7 @@ if __name__ == '__main__':
 			output_filter_string = output_filter_string + ', ' + filter_name[filt]
 	print(output_filter_string)
 	print(" - - - - - - - - ")
+
 	
 	# # # # # # # # # # # # # # # # # # # # # 
 	# Read in the model interpolation grid  #
@@ -350,6 +481,10 @@ if __name__ == '__main__':
 	if ((not args.id_number_list) and (not args.id_number) and (not args.idarglist)):
 		sys.exit('No ID numbers provided')
 
+	# Let's make an array which has all of the MCMC convergence times.
+	if (number_objects > 1):
+		time_for_MCMC_convergence = np.zeros(number_objects)-9999
+
 	# Creating the optional output folder
 	if (args.output_folder):
 		if (not args.output_folder.endswith('/')):
@@ -361,16 +496,31 @@ if __name__ == '__main__':
 	if (not os.path.isdir(optional_output_folder)):
 		os.mkdir(optional_output_folder)
 
-	# We only need to open the input photometry file once, at the 
-	# start. 
+	# Now we open up the photometry file.
 	photometry_file = args.photometry_file
-	photometry_fits = fits.open(photometry_file, memmap = True)
-	all_ID = photometry_fits['CIRC'].data['ID'].astype(int)
 	
-	if (number_objects > 1):
-		time_for_MCMC_convergence = np.zeros(number_objects)-9999
+	# Let's get the extention, .fits. or something else, which we treat as a .txt file:
+	base, ext = os.path.splitext(photometry_file)
+	if ext == ".gz":
+		_, ext = os.path.splitext(base)  # peel off the .fits.gz, .txt.gz etc.
+	ext = ext.lower()
 
-	# Go through the individual sources and fit them one by one! 
+	# If it's a fits file, we need to put the IDs in an array, all_ID
+	if ext in [".fits", ".fit", ".fts"]:
+		filetype = "fits"
+		all_ID = fits.open(photometry_file, memmap = True)['CIRC'].data['ID'].astype(int)
+	
+	# Otherwise we treat it like a txt file and look for "ID" in the header to create all_ID
+	else:
+		filetype = "txt"  # whitespace-delimited assumed	
+		try:
+			photometry_data = pd.read_csv(photometry_file, sep=r'\s+', comment="#")
+		except Exception as e:
+			raise ValueError(f"Could not parse text file '{photometry_file}'. Make sure it's whitespace-delimited.\nSee README for expected format.\nOriginal error: {e}")
+		
+		all_ID = photometry_data["ID"].values
+
+	# Now...we're ready to go through the individual sources and fit them one by one! 
 	for objid in range(0, number_objects):
 		
 		print(" ")
@@ -380,39 +530,23 @@ if __name__ == '__main__':
 		pretty_ID_at_top(str(ID_numbers[objid]), model_to_use)
 		
 		object_ID = int(ID_numbers[objid])
-		fluxes_to_use = args.aperture_size
+		
 		survey_stub = args.name_stub 
 
 		object_index = np.where(all_ID == object_ID)[0]
 		if (len(object_index) == 0):
 			print("Object ID"+str(object_ID)+" not found! Skipping this object")
 		else:
-			object_index = object_index[0]
 
-			object_RA = photometry_fits['CIRC'].data['RA'][object_index]
-			object_DEC = photometry_fits['CIRC'].data['DEC'][object_index]
-					
-			min_rel_err = 0.05
-			object_flux = np.zeros(number_interp_filters)-9999
-			object_flux_errors = np.zeros(number_interp_filters)-9999
-			used_indices = np.empty(0, dtype = int)
-			print("    Getting object fluxes for ID "+str(object_ID))
-			for q in range(0, number_interp_filters):
-				interp_filter_index = np.where(filter_name == model_interp_object['filters'][q])[0]
-			
-				if (len(interp_filter_index) > 0):
-					used_indices = np.append(used_indices, np.array([q], dtype = int))
-					object_flux[q] = photometry_fits['CIRC'].data[model_interp_object['filters'][q]+'_'+fluxes_to_use][object_index]
-					try:
-						object_flux_errors[q] = photometry_fits['CIRC'].data[model_interp_object['filters'][q]+'_'+fluxes_to_use+'_en'][object_index]
-					except KeyError:
-						object_flux_errors[q] = photometry_fits['CIRC'].data[model_interp_object['filters'][q]+'_'+fluxes_to_use+'_e'][object_index]
+			object_flux, object_flux_errors, used_indices = load_flux_file(
+			object_ID,                  # int: The ID of the object to find
+			photometry_file,            # str: Path to the file
+			config,                     # config filter from the json file
+			model_interp_object,        # Model interpolator
+			filetype=filetype,          # str: One of ["fits", "txt"]
+			min_rel_err=0.05            # float: Minimum relative error floor
+			)
 						
-					# make sure that the SNR can't get too high, based on min_rel_err.
-					if (((object_flux_errors[q]/object_flux[q]) < min_rel_err) & ((object_flux_errors[q]/object_flux[q]) > 0)):
-						object_flux_errors[q] = object_flux[q] * min_rel_err
-						print("     Updating Flux in filter "+str(model_interp_object['filters'][q])+" to be at the minimum relative error.")
-			
 			print("     - - - - - - - - ")
 			print("    Assuming source is at 1 Jupiter radius.") 
 			print("     - - - - - - - - ")
@@ -640,22 +774,43 @@ if __name__ == '__main__':
 			median_phot = np.percentile(model_photometry, 50, axis=0)[0]* np.square(median_object_radius/median_distance)   # 50th percentile (median)
 				
 			print("     - - - - - - - - ")
+
+			# Calculate chi-square:
+			only_pos_errors = np.where(object_flux_errors[used_indices] > 0)[0]
+			chisq_model = calculate_chisq(object_flux[used_indices][only_pos_errors], median_phot[used_indices][only_pos_errors], object_flux_errors[used_indices][only_pos_errors])
+			
+			number_data_points = len(object_flux[used_indices][only_pos_errors])
+			if ((model_to_use == 'SonoraElfOwl') or (model_to_use == 'LOWZ')):
+				number_free_parameters = 6
+			if (model_to_use == 'ATMO2020'):
+				number_free_parameters = 4
+			
+			degrees_of_freedom = number_data_points - number_free_parameters
+			if (degrees_of_freedom > 0):
+				chisq_model_reduced = chisq_model / degrees_of_freedom
+			else:
+				chisq_model_reduced = -9999
+				print("      Warning: number of free parameters > number of data points, reduced chi-square will be -9999")
+
 			
 			print("    Plotting spectrum with SED")
 			fig = plt.figure(figsize=(8, 4))
 			ax = plt.subplot(1,1,1)
 			
-			
 			ax.scatter(filter_central_wavelength, object_flux[used_indices], s = 40, color = 'black', alpha = 1.0, zorder = 15, label = 'Observed Photometry')
-			only_pos_errors = np.where(object_flux_errors[used_indices] > 0)[0]
 			ax.errorbar(filter_central_wavelength[only_pos_errors], object_flux[used_indices][only_pos_errors], yerr = object_flux_errors[used_indices][only_pos_errors], color = 'black', ls = 'None', alpha = 0.8, zorder = 14)
 			
-			ax.scatter(filter_central_wavelength, median_phot[used_indices], color = 'None', edgecolor = 'red', linewidth = 3.0, alpha = 0.9, marker = 's', s = 80, zorder = 13, label = 'Model Photometry')
+			ax.scatter(filter_central_wavelength, median_phot[used_indices], color = 'None', edgecolor = 'red', linewidth = 3.0, alpha = 0.9, marker = 's', s = 80, zorder = 13, label = 'Model Photometry, $\chi_{\mathrm{red}}^2$ = '+str(round(chisq_model_reduced,2)))
 			ax.fill_between(model_interp_object['wave']/1e4, lower_values, upper_values, step='mid', color='red', alpha=0.1, label='68\% Confidence', zorder = 11)
 			ax.step(model_interp_object['wave']/1e4, median_values, color = 'red', alpha = 0.4, label = 'Model Flux', zorder = 12)
 			
+			#ax.text(0.1, 0.9, '$\chi^2$ = '+str(round(chisq_model,2)), horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+			#ax.text(0.1, 0.8, '$\chi_{\mathrm{red}}^2$ = '+str(round(chisq_model_reduced,2)), horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+				
 			ax.set_title('JADES ID '+str(object_ID), fontsize = 15)
-			ax.set_xlim(0.75, 5.2)
+			xlim_min = np.min(filter_central_wavelength) - 0.1*np.min(filter_central_wavelength)
+			xlim_max = np.max(filter_central_wavelength) + 0.1*np.max(filter_central_wavelength)
+			ax.set_xlim(xlim_min, xlim_max)
 			ymin = np.min(object_flux[used_indices])/10.0
 			if (ymin < 1e-2):
 				ymin = 1e-2
@@ -674,7 +829,7 @@ if __name__ == '__main__':
 			
 			print("     - - - - - - - - ")
 			
-			print("    Creating Output File ")
+			print("    Creating Output Files ")
 			
 			final_Teff_500 = np.percentile(samples[:,0], 50, axis=0)
 			final_Teff_lower = np.percentile(samples[:,0], 16, axis=0)
@@ -707,13 +862,13 @@ if __name__ == '__main__':
 					final_kzz_lower, final_kzz_500, final_kzz_upper,
 					final_mh_lower, final_mh_500, final_mh_upper,
 					final_co_lower, final_co_500, final_co_upper,
-					final_distance_lower, final_distance_500, final_distance_upper]])
+					final_distance_lower, final_distance_500, final_distance_upper, chisq_model, chisq_model_reduced]])
 				
 				# Define the header
-				header = "# ID Teff_lower Teff Teff_upper logg_lower logg logg_upper kzz_lower kzz kzz_upper M/H_lower M/H M/H_upper co_lower co co_upper distance_lower distance distance_upper"
+				header = "# ID Teff_lower Teff Teff_upper logg_lower logg logg_upper kzz_lower kzz kzz_upper M/H_lower M/H M/H_upper co_lower co co_upper distance_lower distance distance_upper chisq chisq_reduced"
 				
 				# Define the format string
-				fmt = ['%d', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f']  
+				fmt = ['%d', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f']  
 			
 			if (model_to_use == 'ATMO2020'):
 				final_mh_500 = np.percentile(samples[:,2],  50, axis=0)
@@ -728,17 +883,23 @@ if __name__ == '__main__':
 				output_data = np.array([[object_ID, final_Teff_lower, final_Teff_500, final_Teff_upper,
 					final_logg_lower, final_logg_500, final_logg_upper,
 					final_mh_lower, final_mh_500, final_mh_upper,
-					final_distance_lower, final_distance_500, final_distance_upper]])
+					final_distance_lower, final_distance_500, final_distance_upper, chisq_model, chisq_model_reduced]])
 				
 				# Define the header
-				header = "# ID Teff_lower Teff Teff_upper logg_lower logg logg_upper M/H_lower M/H M/H_upper distance_lower distance distance_upper"
+				header = "# ID Teff_lower Teff Teff_upper logg_lower logg logg_upper M/H_lower M/H M/H_upper distance_lower distance distance_upper chisq chisq_reduced"
 				
 				# Define the format string
-				fmt = ['%d', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f']  
+				fmt = ['%d', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f', '%.2f']  
 				
 			# Save to file
 			output_fit_file_name = optional_output_folder+survey_stub+f'_{int(object_ID):06d}_parameters_'+output_name_stub+'.txt'
 			np.savetxt(output_fit_file_name, output_data, fmt=fmt, delimiter=' ', header=header, comments='')
+			
+			output_model_sed_file_name = optional_output_folder+survey_stub+f'_{int(object_ID):06d}_SED_'+output_name_stub+'.txt'
+			np.savetxt(output_model_sed_file_name, np.c_[model_interp_object['wave']/1e4, lower_values, median_values, upper_values], fmt = '%f %f %f %f', header = 'Wavelength Flux_l68 Flux_50 Flux_u68')
+
+			output_model_photometry_file_name = optional_output_folder+survey_stub+f'_{int(object_ID):06d}_photometry_'+output_name_stub+'.txt'
+			np.savetxt(output_model_photometry_file_name, np.c_[filter_central_wavelength, median_phot[used_indices]], fmt = '%f %f', header = 'Wavelength Flux_Model')
 			
 			
 			print("     - - - - - - - - ")
@@ -746,6 +907,8 @@ if __name__ == '__main__':
 			print("        H5file with chains: "+optional_output_folder+hfile)
 			print("        corner plot:        "+optional_output_folder+corner_filename)
 			print("        SED plot:           "+optional_output_folder+SED_filename)
+			print("        SED files:          "+output_model_sed_file_name)
+			print("                            "+output_model_photometry_file_name)
 			print("        output parameters:  "+output_fit_file_name)
 		
 			# Doing a little cleanup here at the end. 
