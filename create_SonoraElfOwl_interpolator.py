@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import json
 import math
 import astropy
 import numpy as np
@@ -35,13 +36,32 @@ def get_teff_logg_Kzz_from_file_name(best_fitting_template_name):
 	return np.log10(teff), kzz, np.log10(grav)+2.0, mh, co
 
 # Opening up the filter file (this can change in the future)
-filters_file = 'BD_NIRCam_MIRI_filters.txt'
-filter_name = np.loadtxt(filters_file, dtype = 'U10')[:,0]
-filter_central_wavelength = np.loadtxt(filters_file, dtype = 'U10')[:,1].astype(float)
+filters_file = 'BD_NIRCam_MIRI_filters.json'
+
+print(" - - - - - - - - ")
+print("Opening up config/filters json file: "+filters_file)
+
+with open(filters_file, 'r') as f:
+	config = json.load(f)
+
+filter_name = list(config["filter_columns"].keys())
+filter_central_wavelength = np.array([
+	config["filter_columns"][f]["wavelength"] for f in filter_name
+])	
+wavelength_lookup = {f: config["filter_columns"][f]["wavelength"] for f in filter_name}
+
 number_nircam_filters = len(np.where(filter_central_wavelength < 5)[0])
 number_miri_filters = len(np.where(filter_central_wavelength > 5)[0])
 number_filters = len(filter_name)
-
+print("    There are "+str(number_filters)+" filters for the interpolator:")
+output_filter_string = "       "+filter_name[0]
+for filt in range(1, number_filters):
+	if (not filt%6):
+		output_filter_string = output_filter_string + '\n       '+filter_name[filt]
+	else:
+		output_filter_string = output_filter_string + ', ' + filter_name[filt]
+print(output_filter_string)
+print(" - - - - - - - - ")
 
 sonora_path = sys.argv[1]
 
@@ -52,10 +72,13 @@ number_directories = len(model_file_temp_min)
 
 lower_res_wave = np.arange(0.75, 15, 0.01)*1e4
 number_wave_elements = len(lower_res_wave)
+
+filter_sedpy = [observate.Filter("jwst_" + f) for f in filter_name]
+
 for x in range(0, number_directories):
 
 	print("Tmin = "+str(model_file_temp_min[x])+" to Tmax = "+str(model_file_temp_max[x]))
-	directory = sonora_path + 'output_'+str(round(model_file_temp_min[x],1))+'_'+str(round(model_file_temp_max[x],1))+'/'
+	directory = sonora_path + 'output_'+str(round(model_file_temp_min[x],1))+'_'+str(round(model_file_temp_max[x],1))+'/'# + spectra_logzz_2.0_teff_275.0_grav_17.0_mh_-0.5_co_0.5.nc
 
 	spectra_path = glob.glob(directory+'spectra*')
 	number_spectra = len(spectra_path)
@@ -113,11 +136,9 @@ for x in range(0, number_directories):
 		
 		# Now we have to go and pass the spectrum through the filters to get the fluxes
 	
-		for filt in range(0, number_filters):
+		for filt, f in enumerate(filter_sedpy):
 		
-			filter_sedpy = observate.Filter("jwst_"+filter_name[filt])
-			
-			filter_sedpy_abmag = filter_sedpy.ab_mag(spectrum_wave_Angstrom_sorted, spectra_flux_ergscm2Ang_sorted)
+			filter_sedpy_abmag = f.ab_mag(spectrum_wave_Angstrom_sorted, spectra_flux_ergscm2Ang_sorted)
 			if (x == 0):
 				output_fluxes[filt, q] = 10**((filter_sedpy_abmag + 48.60)/(-2.5))
 			else:
@@ -140,7 +161,15 @@ for x in range(0, number_directories):
 		output_fluxes = np.hstack((output_fluxes, subsample_fluxes))
 		output_spectra = np.hstack((output_spectra, subsample_spectra))
 
-# This helps to span the gaps in the Sonora Elf Owl g rid.
+# This is for the original Sonora Elf Owl v1 grids
+# extrapolation_Teff_values = np.unique(output_teff)
+# extrapolation_grav_values = np.unique(output_grav)[1:]
+# extrapolation_logg_values = np.unique(output_logg)[1:]
+# extrapolation_kzz_values = np.unique(output_kzz)
+# extrapolation_mh_values = np.unique(output_mh)
+# extrapolation_co_values = np.unique(output_co)[[0,1,2]]
+
+# This is for the new Sonora Elf Owl v2 grids
 extrapolation_Teff_values = np.unique(output_teff)
 extrapolation_logg_values = np.unique(output_logg)[1:]
 extrapolation_kzz_values = np.unique(output_kzz)

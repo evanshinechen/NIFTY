@@ -207,10 +207,15 @@ def log_likelihood(theta, flux_nJy, error_nJy):
 		try: model_flux_nJy = model_phot_interp([np.log10(Teff), logg, mh])[0]#[0:14]
 		except ValueError: return -np.inf
 
-	object_radius = 0.10276 * 2.2555823856078E-8 # in pc
-	
-	# Have to multiply the model fluxes by a value that depends on the distance
-	model_flux_nJy = model_flux_nJy*np.square(object_radius/d)
+	# Have to multiply the model fluxes by a normalization value that depends on the distance
+	if (model_to_use == 'ATMO2020'):
+		object_radius = 0.10276# In Jupiter radii
+		model_flux_nJy = model_flux_nJy*np.square((object_radius/0.1) * (10.0/d)) # to account for the fact that the model is normalized to 0.1 Rsun at 10 pc
+
+	else:
+		object_radius = 0.10276 * 2.2555823856078E-8 # in pc
+		model_flux_nJy = model_flux_nJy*np.square(object_radius/d)
+
 	condition = (~np.isnan(flux_nJy)) & (~np.isnan(error_nJy)) & (error_nJy > 0)
 	chi2 = np.sum(np.square((flux_nJy[condition]-model_flux_nJy[condition])/error_nJy[condition]))
     
@@ -353,7 +358,7 @@ args=parser.parse_args()
 
 if __name__ == '__main__':
 
-	model_to_use = args.user_model#'ATMO2020' # 'ATMO2020', 'LOWZ'
+	model_to_use = args.user_model 
 	
 	if (model_to_use == 'SonoraElfOwl'):
 		model_name = 'Sonora Elf Owl'
@@ -741,7 +746,7 @@ if __name__ == '__main__':
 			# # # # # # # # # # # # # # # # # # #
 			
 			# We assume that these objects are at a Jupiter radius
-			object_radius = 0.10276 * 2.2555823856078E-8 # in pc
+			#object_radius = 0.10276 * 2.2555823856078E-8 # in pc
 			
 			print("    Getting median/upper/lower limits from the spectrum")
 			model_spectroscopy = []
@@ -754,12 +759,14 @@ if __name__ == '__main__':
 				
 				spectrum_nJy = flambda_to_fnu(model_interp_object['wave'], spectrum_ergscm2Agn)/1e-23/1e-9
 			
-				sample_object_radius[index] = 0.10276 * 2.2555823856078E-8 # in pc
 			
 				if ((model_to_use == 'SonoraElfOwl') or (model_to_use == 'LOWZ')):
+					sample_object_radius[index] = 0.10276 * 2.2555823856078E-8 # in pc
 					model_spectroscopy.append([spectrum_nJy * np.square(sample_object_radius[index]/sample[5])])
 				if (model_to_use == 'ATMO2020'):
-					model_spectroscopy.append([spectrum_nJy * np.square(sample_object_radius[index]/sample[3])])
+					sample_object_radius[index] = 0.10276# * 2.2555823856078E-8 # in pc
+					model_spectroscopy.append([spectrum_nJy * np.square((sample_object_radius[index]/0.1)*(10.0/sample[3]))])
+					#model_spectroscopy.append([spectrum_nJy * np.square(sample_object_radius[index]/sample[3])])
 			
 			median_values = np.percentile(model_spectroscopy, 50, axis=0)[0]   # 50th percentile (median)
 			lower_values = np.percentile(model_spectroscopy, 16, axis=0)[0]   # 16th percentile (lower bound)
@@ -771,7 +778,10 @@ if __name__ == '__main__':
 				median_distance = np.percentile(samples[:,3], 50, axis=0)
 			
 			median_object_radius = np.percentile(sample_object_radius, 50, axis=0)
-			median_phot = np.percentile(model_photometry, 50, axis=0)[0]* np.square(median_object_radius/median_distance)   # 50th percentile (median)
+			if ((model_to_use == 'SonoraElfOwl') or (model_to_use == 'LOWZ')):
+				median_phot = np.percentile(model_photometry, 50, axis=0)[0]* np.square(median_object_radius/median_distance)   # 50th percentile (median)
+			if (model_to_use == 'ATMO2020'):
+				median_phot = np.percentile(model_photometry, 50, axis=0)[0]* np.square((median_object_radius/0.1)*(10.0/median_distance))   # 50th percentile (median)
 				
 			print("     - - - - - - - - ")
 

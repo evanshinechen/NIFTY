@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import json
 import math
 import astropy
 import numpy as np
@@ -39,12 +40,33 @@ def get_teff_logg_from_file_name(best_fitting_template_name):
 	return np.log10(teff), logg, mh
 
 # Opening up the filter file (this can change in the future)
-filters_file = 'BD_NIRCam_MIRI_filters.txt'
-filter_name = np.loadtxt(filters_file, dtype = 'U10')[:,0]
-filter_central_wavelength = np.loadtxt(filters_file, dtype = 'U10')[:,1].astype(float)
+filters_file = 'BD_NIRCam_MIRI_filters.json'
+
+print(" - - - - - - - - ")
+print("Opening up config/filters json file: "+filters_file)
+
+with open(filters_file, 'r') as f:
+	config = json.load(f)
+
+filter_name = list(config["filter_columns"].keys())
+filter_central_wavelength = np.array([
+	config["filter_columns"][f]["wavelength"] for f in filter_name
+])	
+wavelength_lookup = {f: config["filter_columns"][f]["wavelength"] for f in filter_name}
+
 number_nircam_filters = len(np.where(filter_central_wavelength < 5)[0])
 number_miri_filters = len(np.where(filter_central_wavelength > 5)[0])
 number_filters = len(filter_name)
+print("    There are "+str(number_filters)+" filters for the interpolator:")
+output_filter_string = "       "+filter_name[0]
+for filt in range(1, number_filters):
+	if (not filt%6):
+		output_filter_string = output_filter_string + '\n       '+filter_name[filt]
+	else:
+		output_filter_string = output_filter_string + ', ' + filter_name[filt]
+print(output_filter_string)
+print(" - - - - - - - - ")
+
 
 
 atmo_path = sys.argv[1]
@@ -56,6 +78,8 @@ number_directories = len(model_file_mh_values)
 # Lower resolution wavelength grid
 lower_res_wave = np.arange(0.75, 15, 0.01)*1e4
 number_wave_elements = len(lower_res_wave)
+
+filter_sedpy = [observate.Filter("jwst_" + f) for f in filter_name]
 
 for x in range(0, number_directories):
 
@@ -99,12 +123,12 @@ for x in range(0, number_directories):
 		#ds = xarray.load_dataset(spectra_path[q])
 			
 		spectra_wave = np.loadtxt(spectra_path[q])[:,0] # micron
-		spectra_flux_Wm2m = np.loadtxt(spectra_path[q])[:,1]*1e6*3.086e+19	# flambda, [W/m2/um]
+		spectra_flux_Wm2m = np.loadtxt(spectra_path[q])[:,1]#*1e6*3.086e+19	# flambda, [W/m2/um]
 		
 		spectra_wave_Angstrom = spectra_wave * 1e4
 	
 		# Here's the raw erg/s/cm^2/Angstrom ATMO model
-		spectra_flux_ergscm2Ang = spectra_flux_Wm2m * 1e-7
+		spectra_flux_ergscm2Ang = spectra_flux_Wm2m * 0.1# * 1e-7
 				
 		# And now, here's the sorted angstrom grid. 
 		angstrom_sorted = np.argsort(spectra_wave_Angstrom)
@@ -114,11 +138,10 @@ for x in range(0, number_directories):
 		
 		# Now we have to go and pass the spectrum through the filters to get the fluxes
 	
-		for filt in range(0, number_filters):
+		#for filt in range(0, number_filters):
+		for filt, f in enumerate(filter_sedpy):
 		
-			filter_sedpy = observate.Filter("jwst_"+filter_name[filt])
-			
-			filter_sedpy_abmag = filter_sedpy.ab_mag(spectrum_wave_Angstrom_sorted, spectra_flux_ergscm2Ang_sorted)
+			filter_sedpy_abmag = f.ab_mag(spectrum_wave_Angstrom_sorted, spectra_flux_ergscm2Ang_sorted)
 			if (x == 0):
 				output_fluxes[filt, q] = 10**((filter_sedpy_abmag + 48.60)/(-2.5))
 			else:

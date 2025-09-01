@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import json
 import math
 import astropy
 import numpy as np
@@ -24,32 +25,52 @@ from scipy.interpolate import RegularGridInterpolator
 
 #  LOWZ
 #        TEFF  LOGG  METALLICITY  CTOO  LOGKZZ                                           FILENAME	
-def get_teff_logg_Kzz_from_file_name(atmo_readme, best_fitting_template_name):
+def get_teff_logg_Kzz_from_file_name(lowz_readme, best_fitting_template_name):
 
-	source_index = np.where(atmo_readme['FILENAME'] == best_fitting_template_name)[0][0]
-	teff = atmo_readme['TEFF'][source_index]
-	kzz = atmo_readme['LOGKZZ'][source_index]
-	grav = atmo_readme['LOGG'][source_index]
-	mh = atmo_readme['METALLICITY'][source_index]
-	co = atmo_readme['CTOO'][source_index]
+	source_index = np.where(lowz_readme['FILENAME'] == best_fitting_template_name)[0][0]
+	teff = lowz_readme['TEFF'][source_index]
+	kzz = lowz_readme['LOGKZZ'][source_index]
+	grav = lowz_readme['LOGG'][source_index]
+	mh = lowz_readme['METALLICITY'][source_index]
+	co = lowz_readme['CTOO'][source_index]
 	
 	# We need to make sure that we return the logarithm of reported temperature
 	return np.log10(teff), kzz, grav, mh, co
 
 # Opening up the filter file (this can change in the future)
-filters_file = 'BD_NIRCam_MIRI_filters.txt'
-filter_name = np.loadtxt(filters_file, dtype = 'U10')[:,0]
-filter_central_wavelength = np.loadtxt(filters_file, dtype = 'U10')[:,1].astype(float)
+filters_file = 'BD_NIRCam_MIRI_filters.json'
+
+print(" - - - - - - - - ")
+print("Opening up config/filters json file: "+filters_file)
+
+with open(filters_file, 'r') as f:
+	config = json.load(f)
+
+filter_name = list(config["filter_columns"].keys())
+filter_central_wavelength = np.array([
+	config["filter_columns"][f]["wavelength"] for f in filter_name
+])	
+wavelength_lookup = {f: config["filter_columns"][f]["wavelength"] for f in filter_name}
+
 number_nircam_filters = len(np.where(filter_central_wavelength < 5)[0])
 number_miri_filters = len(np.where(filter_central_wavelength > 5)[0])
 number_filters = len(filter_name)
+print("    There are "+str(number_filters)+" filters for the interpolator:")
+output_filter_string = "       "+filter_name[0]
+for filt in range(1, number_filters):
+	if (not filt%6):
+		output_filter_string = output_filter_string + '\n       '+filter_name[filt]
+	else:
+		output_filter_string = output_filter_string + ', ' + filter_name[filt]
+print(output_filter_string)
+print(" - - - - - - - - ")
 
 
-atmo_path = sys.argv[1]
+lowz_path = sys.argv[1]
 
-atmo_readme = pd.read_csv(atmo_path+'LOWZ_models_index.csv')
+lowz_readme = pd.read_csv(lowz_path+'LOWZ_models_index.csv')
 
-spectra_path = glob.glob(atmo_path+'models/LOW_Z*')
+spectra_path = glob.glob(lowz_path+'models/LOW_Z*')
 number_spectra = len(spectra_path)
 print("    number spectra = "+str(number_spectra))
 
@@ -67,11 +88,13 @@ number_wave_elements = len(lower_res_wave)
 output_fluxes = np.zeros([number_filters,number_spectra])
 output_spectra = np.zeros([number_wave_elements,number_spectra])
 
+filter_sedpy = [observate.Filter("jwst_" + f) for f in filter_name]
+
 for q in tqdm(range(number_spectra)):
 	
 	output_spec_name = spectra_path[q].split('/')[-1]
 	
-	output_teff[q], output_kzz[q], output_logg[q], output_mh[q], output_co[q] = get_teff_logg_Kzz_from_file_name(atmo_readme, output_spec_name)
+	output_teff[q], output_kzz[q], output_logg[q], output_mh[q], output_co[q] = get_teff_logg_Kzz_from_file_name(lowz_readme, output_spec_name)
 		
 	spectra_wave = np.loadtxt(spectra_path[q])[:,0] # micron
 	spectra_flux_Wm2m = np.loadtxt(spectra_path[q])[:,1] # flambda, [W/m2/m]
@@ -89,11 +112,9 @@ for q in tqdm(range(number_spectra)):
 	
 	# Now we have to go and pass the spectrum through the filters to get the fluxes
 
-	for filt in range(0, number_filters):
+	for filt, f in enumerate(filter_sedpy):
 	
-		filter_sedpy = observate.Filter("jwst_"+filter_name[filt])
-		
-		filter_sedpy_abmag = filter_sedpy.ab_mag(spectrum_wave_Angstrom_sorted, spectra_flux_ergscm2Ang_sorted)
+		filter_sedpy_abmag = f.ab_mag(spectrum_wave_Angstrom_sorted, spectra_flux_ergscm2Ang_sorted)
 		
 		output_fluxes[filt, q] = 10**((filter_sedpy_abmag + 48.60)/(-2.5))
 			
