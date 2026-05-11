@@ -7,10 +7,10 @@
 
 NIFTY is a code designed to fit JWST NIRCam/MIRI photometry or NIRSpec prism
 spectroscopy of cold brown dwarf candidates with the LOWZ (Meisner et al. 2021),
-ATMO2020 (Phillips et al. 2020), or Sonora Elf Owl v2 (Mukherjee et al. 2024,
-Wogan et al. 2025) atmospheric models, using a Bayesian framework with the emcee
-sampler (https://emcee.readthedocs.io/en/stable/user/sampler/). This code was described
-in Hainline et al. (2026) (doi.org/10.48550/arXiv.2510.00111).
+ATMO2020 (Phillips et al. 2020), Sonora Elf Owl v2 (Mukherjee et al. 2024,
+Wogan et al. 2025), or earlier Sonora Elf Owl (with PH3, Beiler et al. 2024) atmospheric models, using 
+a Bayesian framework with the emcee sampler (https://emcee.readthedocs.io/en/stable/user/sampler/). 
+This code was described in Hainline et al. (2026) (doi.org/10.48550/arXiv.2510.00111).
 
 NIFTY operates in two modes:
 
@@ -20,7 +20,7 @@ NIFTY operates in two modes:
 In both modes, NIFTY produces a corner plot, a best-fit SED or spectrum plot,
 and a text file with the 16th, 50th, and 84th percentiles of all fit parameters.
 Photometry fits typically converge in under 10 minutes per source for ~14 bands,
-though convergence time varies, especially at high SNR. Spectroscopy fits are slightly
+though convergence time varies, especially at high SNR. Spectroscopic fits are slightly
 longer.
 
 ## Installation
@@ -272,5 +272,6 @@ reported in parsecs.
 - Meisner et al. 2021 (LOWZ): https://doi.org/10.3847/1538-4357/ac013c
 - Phillips et al. 2020 (ATMO2020): https://doi.org/10.1051/0004-6361/201937381 
 - Mukherjee et al. 2024 (Sonora Elf Owl): https://doi.org/10.3847/1538-4357/ad18c2
-- Wogan et al. 2025 (Sonora Elf Owl v2 + PH3): https://doi.org/10.3847/2515-5172/add407
+- Wogan et al. 2025 (Sonora Elf Owl v2): https://doi.org/10.3847/2515-5172/add407
+- Beiler et al. 2024: https://doi.org/10.5281/zenodo.11370829
 - Foreman-Mackey et al. 2013 (emcee): https://doi.org/10.1086/670067
