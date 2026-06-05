@@ -41,8 +41,8 @@ A single .pkl file containing:
     phot_interpolator -- RegularGridInterpolator for broadband fluxes (nJy)
     spec_interpolator -- RegularGridInterpolator for spectra (erg/s/cm^2/Ang)
 """
-
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import glob
 import io
@@ -805,6 +805,21 @@ def build_atmo2020(model_path, filter_name, filter_sedpy, output_filename):
     save_pickle(out, output_filename)
 
 
+def load_lowz_file(path):
+    data = pd.read_csv(path, sep=' ', comment='#', header=None, engine='c').values
+    wave_um   = data[:, 0]    # microns
+    flux_wm2m = data[:, 1]    # W/m^2/m
+
+    wave_ang = wave_um * 1e4
+    # Convert W/m^2/m -> erg/s/cm^2/Ang  (multiply by 1e-7)
+    flux_ergscm2ang = flux_wm2m * 1e-7
+
+    wave_s = wave_ang
+    flux_s = flux_ergscm2ang
+    flux = compute_filter_fluxes(wave_s, flux_s, filter_sedpy)
+    spec = resample_spectrum(wave_s, flux_s)
+    return flux, spec
+
 # ============================================================
 # Model: LOWZ
 #
@@ -826,7 +841,7 @@ def build_atmo2020(model_path, filter_name, filter_sedpy, output_filename):
 # extrapolator, then fill the full grid.
 # ============================================================
 
-def build_lowz(model_path, filter_name, filter_sedpy, output_filename):
+def build_lowz(model_path, filter_name, output_filename):
     """
     Build and save the LOWZ interpolator.
 
@@ -835,56 +850,53 @@ def build_lowz(model_path, filter_name, filter_sedpy, output_filename):
     model_path : str
         Directory containing LOWZ_models_index.csv and models/ subdirectory.
     filter_name : list of str
-    filter_sedpy : list of sedpy Filter objects
     output_filename : str
     """
-    index_csv = os.path.join(model_path, 'LOWZ_models_index.csv')
-    models_dir = os.path.join(model_path, 'models')
 
-    if not os.path.exists(index_csv):
-        sys.exit(f"Error: index file not found: {index_csv}")
-    if not os.path.isdir(models_dir):
-        sys.exit(f"Error: models directory not found: {models_dir}")
+    path = Path(model_path)
+    index_path = path / 'LOWZ_models_index.csv'
+    models_path = path / 'models'
 
-    atmo_readme = pd.read_csv(index_csv)
-    spectra_paths = glob.glob(os.path.join(models_dir, 'LOW_Z*'))
+    if not index_path.exists():
+        raise ValueError(f"Error: index file does not exist: {index_path}")
+
+    if not models_path.exists():
+        raise ValueError(f"Error: models directory not found: {models_path}")
+
+    index = pd.read_csv(index_path).set_index("FILENAME")
+
+    spectra_paths = list(models_path.iterdir())
     print(f"  LOWZ: {len(spectra_paths)} spectra")
 
     teff_list, logg_list, kzz_list, mh_list, co_list = [], [], [], [], []
-    flux_list, spec_list = [], []
+
+    with ThreadPoolExecutor() as executor:
+        results = list(tqdm(
+            executor.map(load_lowz_file, spectra_paths),
+            total=len(spectra_paths)
+        ))
+
+    flux_list, spec_list = tuple(map(list, zip(*results)))
 
     for path in tqdm(spectra_paths):
-        filename = os.path.basename(path)
-        row = atmo_readme[atmo_readme['FILENAME'] == filename]
-        if len(row) == 0:
+        filename = path.name
+        try:
+            row = index.loc[filename]
+        except KeyError:
             print(f"  Warning: {filename} not found in index CSV, skipping.")
             continue
 
-        teff = row['TEFF'].values[0]
-        logg = row['LOGG'].values[0]
-        kzz  = row['LOGKZZ'].values[0]
-        mh   = row['METALLICITY'].values[0]
-        co   = row['CTOO'].values[0]
-
-        data = np.loadtxt(path)
-        wave_um   = data[:, 0]    # microns
-        flux_wm2m = data[:, 1]    # W/m^2/m
-
-        wave_ang = wave_um * 1e4
-        # Convert W/m^2/m -> erg/s/cm^2/Ang  (multiply by 1e-7)
-        flux_ergscm2ang = flux_wm2m * 1e-7
-
-        sort_idx = np.argsort(wave_ang)
-        wave_s = wave_ang[sort_idx]
-        flux_s = flux_ergscm2ang[sort_idx]
+        teff = row['TEFF']
+        logg = row['LOGG']
+        kzz  = row['LOGKZZ']
+        mh   = row['METALLICITY']
+        co   = row['CTOO']
 
         teff_list.append(np.log10(teff))
         logg_list.append(logg)
         kzz_list.append(kzz)
         mh_list.append(mh)
         co_list.append(co)
-        flux_list.append(compute_filter_fluxes(wave_s, flux_s, filter_sedpy))
-        spec_list.append(resample_spectrum(wave_s, flux_s))
 
     output_teff = np.asarray(teff_list)
     output_logg = np.asarray(logg_list)
@@ -1285,7 +1297,7 @@ if __name__ == '__main__':
     elif model == 'ATMO2020':
         build_atmo2020(model_path, filter_name, filter_sedpy, output_file)
     elif model == 'LOWZ':
-        model_grid = build_lowz(model_path, filter_name, filter_sedpy, output_file)
+        model_grid = build_lowz(model_path, filter_name, output_file)
         raw_model_path = 'lowz_model_raw.tar.gz'
         filled_model_path = 'lowz_model_filled.tar.gz'
         filled_model_pickle_path = 'lowz_model_filled_pickle.pkl'
