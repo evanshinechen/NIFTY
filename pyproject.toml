@@ -1,0 +1,22 @@
+[project]
+name = "nifty"
+version = "1.0.0"
+description = "Near-Infrared Fitting for T and Y Dwarfs"
+readme = "README.md"
+requires-python = ">=3.14"
+
+dependencies = [
+  "astro-sedpy>=0.4.1",
+  "astropy>=7.2",
+  "corner>=2.2.3",
+  "emcee>=3.1.6",
+  "h5netcdf>=1.8.1",
+  "h5py>=3.16",
+  "ipython>=9.14",
+  "matplotlib>=3.10",
+  "numpy>=2.4",
+  "scikit-learn>=1.8",
+  "scipy>=1.17",
+  "tqdm>=4.67",
+  "xarray>=2026.4",
+]

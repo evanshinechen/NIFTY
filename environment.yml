@@ -2,7 +2,6 @@ name: NIFTY
 channels:
   - conda-forge
   - http://ssb.stsci.edu/astroconda
-  - defaults
 dependencies:
   - python
   - ipython
@@ -13,3 +12,10 @@ dependencies:
   - matplotlib
   - scikit-learn
   - emcee
+  - corner
+  - xarray
+  - h5netcdf
+  - h5py
+  - pip
+  - pip:
+      - astro-sedpy
