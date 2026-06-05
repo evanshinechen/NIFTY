@@ -1030,6 +1030,182 @@ def build_lowz(model_path, filter_name, filter_sedpy, output_filename):
     )
     return model_grid
 
+
+def fill_point(points, values, target):
+    """
+    Estimate the value of a missing point in a grid by fitting a polynomial.
+
+    Parameters
+    ----------
+    points : tuple of ndarray of float, with shapes (d1, ), ..., (dN, )
+        The points defining the regular grid in N dimensions.
+    values : array_like, shape (d1, ..., dN, M)
+        The data on the regular grid in N dimensions. Each value on the grid
+        is a vector of length M.
+    target: tuple of N ints
+        The index of the target point in N dimensions.
+
+    Returns
+    --------
+    value : ndarray of shape (M,)
+        The estimated data vector at the target.
+    """
+    # The number of parameters.
+    N = len(points)
+
+    # The length of the output vector.
+    M = values.shape[-1]
+
+    # Slice the hypercube.
+    cube_starts = []
+    cube_points = []
+    for coord, axis_points, axis_len in zip(target, points, values.shape):
+        if axis_len < 3:
+            raise ValueError(
+                "Unable to construct hypercube: "
+                "all axes must have a length of at least 3. "
+                f"Recieved axis lengths {values.shape[:-1]}."
+            )
+        start = coord - 1
+        # Shift the hypercube if it goes out of bounds.
+        start = max(start, 0)
+        start = min(start, axis_len - 3)
+        cube_starts.append(start)
+
+        # Extract the physical values for this axis window.
+        cube_points.append(axis_points[start:start + 3])
+
+    # Get the slices for extracting the hypercube.
+    slices = tuple(slice(start, start + 3) for start in cube_starts)
+    # Extract the entire output vector.
+    slices = slices + (slice(None),)
+
+    # Y is an array with shape (n_points, M) where
+    # Y[i, :] represents the output vector at point i.
+    Y = values[slices].reshape(-1, M)
+
+    # axis_points is an array with shape (N, 3) where
+    # axis_points[i, j] is coordinate j on axis i.
+    # The cube edge has three points, so 0 <= j < 3.
+    axis_points = np.stack(cube_points) # shape (N, 3)
+
+    target_rel_cube = tuple(t - s for t, s in zip(target, cube_starts))
+    target_point = axis_points[np.arange(N), target_rel_cube]
+
+    # Get coordinates that are not the same as the target coordinate.
+    rem_mask = np.asarray(target_rel_cube)[:, np.newaxis] != np.arange(3)
+    remaining = axis_points[rem_mask].reshape(-1, 2)
+    total_dist = (
+        np.abs(target_point - remaining[:, 1]) +
+        np.abs(target_point - remaining[:, 0])
+    )
+
+    # Arrays of shape (N,) denoting properties for each axis.
+    axis_space = axis_points[:, 2] - axis_points[:, 0]
+    axis_center = axis_points[:, 1]
+
+    # X is an array with shape (n_points, N) where
+    # X[i, :] represents the physical coordinates at point i.
+    mesh_grids = np.meshgrid(*cube_points, indexing='ij')
+    X = np.stack(mesh_grids, axis=-1).reshape(-1, N)
+
+    # Identify points containing any NaN element in their output vector.
+    mask = np.isnan(Y).any(axis=-1)
+
+    # Mask the target point.
+    # This is not necessary if the target point's value is known to be NaN.
+    # We only set this for testing the fit at existing grid points.
+    mask[np.ravel_multi_index(target_rel_cube, (3,) * N)] = True
+
+    X = X[~mask]
+    Y = Y[~mask]
+
+    # Define the weight vector with shape (n_points,).
+    # The weight along one axis is 1 - |x - t| / d, where x is the point
+    # being weighted, t is the target point, and d is the total distance
+    # between the target point and each of the other two points. The weight
+    # of a point is the product of its weight along all axes.
+
+    w = np.prod(1 - np.abs((X - target_point) / total_dist), axis=1)
+    # w = np.prod(1 - np.square((X - target_point) / total_dist), axis=1)
+    # w = np.full((X.shape[0],), 1.0, dtype=values.dtype)
+
+    # Normalize the input vectors for numerical stability.
+    X = (X - axis_center) / axis_space
+
+    # We need at least 2^N points to solve a multilinear polynomial.
+    num_terms = 2**N
+    if len(X) < num_terms:
+        raise ValueError(
+            f"Insufficient valid points ({len(X)}) to fit a "
+            f"multilinear polynomial requiring {num_terms} coefficients."
+        )
+
+    # Construct the design matrix for a multilinear polynomial.
+    # For N variables, we require 2^N terms (combinations of subsets).
+
+    # Assign every N-bit integer to a term.
+    # term_i has shape (2^N,).
+    term_i = np.arange(num_terms, dtype=np.int32)
+
+    # Determine which variables should be included in each term.
+    # include_term[i, j] is True when term i contains variable j.
+    # include_term has shape (2^N, N).
+    include_term = (term_i[:, np.newaxis] >> np.arange(N)) & 1
+
+    # If the bit is 0, we want 1 (so it doesn't affect the product).
+    # If the bit is 1, we want the variable value from X.
+    # X[:, np.newaxis, :] has shape (n_points, 1, N).
+    # include_term[np.newaxis, ...] has shape (1, 2^N, N).
+    # factors has shape (n_points, 2^N, N).
+    factors = np.where(include_term[np.newaxis, ...], X[:, np.newaxis, :], 1.0)
+
+    # Multiply along the variable axis (axis=2) to get shape (n_points, 2^N).
+    A = np.prod(factors, axis=2)
+
+    # To perform, weighted least squares, we modify A and Y.
+    # If W is the matrix with w as its diagonal, this is the equivalent of
+    # A' = W^(1/2)A and Y' = W^(1/2)Y.
+    # Solving with these new values using OLS is equivalent to WLS.
+    w_sqrt = np.sqrt(w)[:, np.newaxis]
+    A *= w_sqrt
+    Y *= w_sqrt
+
+    C, _, _, _ = np.linalg.lstsq(A, Y, rcond=None)
+
+    # Solve the polynomial at the target point.
+    # See above for how the design matrix is created.
+    # This is similar, except that only one row is needed for the one point.
+    target_norm = (target_point - axis_center) / axis_space
+    factors = np.where(include_term, target_norm[np.newaxis, :], 1.0)
+    a_target = np.prod(factors, axis=1)
+
+    # Compute the normalized predictions: shape (1, M).
+    y_target = a_target @ C
+
+    return y_target
+
+def fill_model_fit(model: ModelGrid):
+    """
+    Fill the missing points in a model by fitting a polynomial around each one.
+
+    Parameters
+    ----------
+    model : ModelGrid
+        The model to fill in place.
+    """
+    for grid in [model.phot, model.spec]:
+        # Get all indices that are missing points (NaN).
+        # Grid has shape (d1, ..., dN, M)
+        # nan_mask has shape (d1, ..., dN)
+        nan_mask = np.isnan(grid).any(axis=-1)
+        # missing has shape (number_missing, N)
+        missing = np.argwhere(nan_mask)
+        missing_list = [tuple(index) for index in missing]
+        for target in tqdm(missing_list):
+            grid[target] = fill_point(model.points, grid, target)
+    model.fill_method = 'fit'
+
 # ============================================================
 # Argument parsing and entry point
 # ============================================================
@@ -1111,7 +1287,17 @@ if __name__ == '__main__':
     elif model == 'LOWZ':
         model_grid = build_lowz(model_path, filter_name, filter_sedpy, output_file)
         raw_model_path = 'lowz_model_raw.tar.gz'
+        filled_model_path = 'lowz_model_filled.tar.gz'
+        filled_model_pickle_path = 'lowz_model_filled_pickle.pkl'
         save_model(model_grid, raw_model_path)
+        print(f"Saved raw model to: {raw_model_path}")
+        print("Filling model...")
+        fill_model_fit(model_grid)
+        print("Model filled.")
+        save_model(model_grid, filled_model_path)
+        print(f"Saved filled model to: {filled_model_path}")
+        save_model_pickle(model_grid, filled_model_pickle_path)
+        print(f"Saved filled pickle model to: {filled_model_pickle_path}")
         print(f"Saved raw model to: {raw_model_path}")
 
     print(" - - - - - - - - ")
