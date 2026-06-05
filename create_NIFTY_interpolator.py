@@ -42,20 +42,25 @@ A single .pkl file containing:
     spec_interpolator -- RegularGridInterpolator for spectra (erg/s/cm^2/Ang)
 """
 
-import os
-import sys
-import glob
-import json
 import argparse
+from dataclasses import dataclass
+import glob
+import io
+import json
+import os
+from pathlib import Path
 import pickle
+import sys
+import tarfile
 import warnings
 warnings.filterwarnings('ignore')
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
-from tqdm import tqdm
 from scipy.interpolate import RegularGridInterpolator
 from sedpy import observate
+from tqdm import tqdm
 
 
 # ============================================================
@@ -160,6 +165,142 @@ def save_pickle(output_values_data, output_filename):
     with open(output_filename, 'wb') as f:
         pickle.dump(output_values_data, f)
     print("Saved interpolator to: " + output_filename)
+
+
+@dataclass
+class ModelGrid:
+     # Points on each axis
+    points : tuple[np.ndarray[tuple[int], np.dtype[np.float32]], ...]
+     # Photometry data grid
+    phot : npt.NDArray[np.float32]
+     # Spectroscopy data grid
+    spec : npt.NDArray[np.float32]
+     # Map axis name to index
+    axes_map : dict[str, int]
+     # Name of the model
+    model_name : str
+     # How holes were filled or None if not filled
+    fill_method : str | None
+    # List of filter names
+    filters : list[str]
+    # Sampled wave
+    wave : np.ndarray[tuple[int], np.dtype[np.float32]]
+
+def load_model(path):
+    """
+    Load a ModelGrid from a file.
+
+    Parameters
+    ----------
+    path : str
+        Path to the file to load.
+
+    Returns
+    -------
+    model_grid : ModelGrid
+        The ModelGrid loaded from the file.
+    """
+    with tarfile.open(path, mode='r|gz') as tar:
+        meta_member = tar.next()
+        if meta_member is None:
+            raise ValueError("Tarfile is empty.")
+        meta_file = tar.extractfile(meta_member)
+        assert meta_file is not None
+        meta = json.loads(meta_file.read().decode('utf-8'))
+        arrays = {}
+        while True:
+            member = tar.next()
+            if member is None:
+                break
+            name = Path(member.name).stem
+            array_file = tar.extractfile(member)
+            assert array_file is not None
+            arrays[name] = np.load(io.BytesIO(array_file.read()))
+        points = tuple(arrays[name] for name in meta['axes'])
+        axes_map = {name: i for i, name in enumerate(meta['axes'])}
+    return ModelGrid(
+        points=points,
+        phot=arrays['phot'],
+        spec=arrays['spec'],
+        axes_map=axes_map,
+        model_name=meta['model_name'],
+        fill_method=meta['fill_method'],
+        filters=meta['filters'],
+        wave=arrays['wave'],
+    )
+
+def save_model(model_grid: ModelGrid, path):
+    """
+    Save a ModelGrid to a file.
+
+    Parameters
+    ----------
+    model_grid : ModelGrid
+        The ModelGrid to save.
+    path : str
+        The path to save the ModelGrid.
+    """
+    def _write_meta(meta):
+        buffer = io.BytesIO(json.dumps(meta).encode('utf-8'))
+        return buffer.getvalue()
+
+    def _write_array(obj):
+        buffer = io.BytesIO()
+        np.save(buffer, obj)
+        return buffer.getvalue()
+
+    def _add_bytes_to_tar(bytes, name, tar):
+        stream = io.BytesIO(bytes)
+        tar_info = tarfile.TarInfo(name=name)
+        tar_info.size = len(bytes)
+        tar.addfile(tar_info, fileobj=stream)
+
+    meta = {}
+    meta['model_name'] = model_grid.model_name
+    meta['fill_method'] = model_grid.fill_method
+    meta['filters'] = model_grid.filters
+
+    index_to_name = {index: name for name, index in model_grid.axes_map.items()}
+    meta['axes'] = [index_to_name[i] for i in range(len(index_to_name))]
+
+    arrays = {}
+    arrays['phot'] = model_grid.phot
+    arrays['spec'] = model_grid.spec
+    arrays['wave'] = model_grid.wave
+    for name, axis in zip(meta['axes'], model_grid.points):
+        arrays[name] = axis
+    with tarfile.open(path, mode='w|gz') as tar:
+        _add_bytes_to_tar(_write_meta(meta), 'meta.json', tar)
+        for name, array in arrays.items():
+            _add_bytes_to_tar(_write_array(array), f'{name}.npy', tar)
+
+def save_model_pickle(model_grid: ModelGrid, path):
+    """
+    Save a ModelGrid to a pickle file.
+
+    Parameters
+    ----------
+    model_grid : ModelGrid
+        The ModelGrid to save.
+    path : str
+        The path to save the ModelGrid.
+    """
+    axes = model_grid.axes_map
+    phot_interp = RegularGridInterpolator(model_grid.points, model_grid.phot)
+    spec_interp = RegularGridInterpolator(model_grid.points, model_grid.spec)
+    out = {
+        'T_eff':              model_grid.points[axes['teff']],
+        'logg':               model_grid.points[axes['logg']],
+        'kzz':                model_grid.points[axes['kzz']],
+        'mh':                 model_grid.points[axes['mh']],
+        'co':                 model_grid.points[axes['co']],
+        'filters':            model_grid.filters,
+        'wave':               model_grid.wave,
+        'phot_interpolator':  phot_interp,
+        'spec_interpolator':  spec_interp,
+    }
+    with open(path, 'wb') as f:
+        pickle.dump(out, f)
 
 
 # ============================================================
@@ -825,6 +966,12 @@ def build_lowz(model_path, filter_name, filter_sedpy, output_filename):
     phot_grid = np.empty(full_shape + (output_fluxes.shape[0],))
     spec_grid = np.empty(full_shape + (output_spectra.shape[0],))
 
+    raw_phot_grid = np.full(
+        full_shape + (output_fluxes.shape[0],), np.nan, dtype=np.float32
+    )
+    raw_spec_grid = np.full(
+        full_shape + (output_spectra.shape[0],), np.nan, dtype=np.float32
+    )
     n_total = n_extrapolations = 0
     for i0, tv in enumerate(Teff_values):
         for i1, lv in enumerate(logg_values):
@@ -836,6 +983,8 @@ def build_lowz(model_path, filter_name, filter_sedpy, output_filename):
                         if q is not None:
                             phot_grid[i0,i1,i2,i3,i4,:] = output_fluxes[:,q] / 1e-23 / 1e-9
                             spec_grid[i0,i1,i2,i3,i4,:] = output_spectra[:,q]
+                            raw_phot_grid[i0,i1,i2,i3,i4,:] = output_fluxes[:,q] / 1e-23 / 1e-9
+                            raw_spec_grid[i0,i1,i2,i3,i4,:] = output_spectra[:,q]
                         else:
                             n_extrapolations += 1
                             phot_grid[i0,i1,i2,i3,i4,:] = phot_extrapolator(
@@ -868,6 +1017,18 @@ def build_lowz(model_path, filter_name, filter_sedpy, output_filename):
     }
     save_pickle(out, output_filename)
 
+    # Return the raw model grid (no points filled in)
+    model_grid = ModelGrid(
+        points=(Teff_values, logg_values, kzz_values, mh_values, co_values),
+        phot=raw_phot_grid,
+        spec=raw_spec_grid,
+        axes_map={n: i for i, n in enumerate(['teff', 'logg', 'kzz', 'mh', 'co'])},
+        model_name='lowz',
+        fill_method=None,
+        filters=filter_name,
+        wave=LOWER_RES_WAVE
+    )
+    return model_grid
 
 # ============================================================
 # Argument parsing and entry point
@@ -948,7 +1109,10 @@ if __name__ == '__main__':
     elif model == 'ATMO2020':
         build_atmo2020(model_path, filter_name, filter_sedpy, output_file)
     elif model == 'LOWZ':
-        build_lowz(model_path, filter_name, filter_sedpy, output_file)
+        model_grid = build_lowz(model_path, filter_name, filter_sedpy, output_file)
+        raw_model_path = 'lowz_model_raw.tar.gz'
+        save_model(model_grid, raw_model_path)
+        print(f"Saved raw model to: {raw_model_path}")
 
     print(" - - - - - - - - ")
     print("Done!")
