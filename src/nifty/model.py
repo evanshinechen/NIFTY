@@ -289,7 +289,11 @@ class Model:
         else:
             values = model_grid.phot
         interp = RegularGridInterpolator(
-            model_grid.points, values, method="linear", bounds_error=False
+            model_grid.points,
+            values,
+            method="linear",
+            bounds_error=False,
+            fill_value=None,
         )
         return cls(interp, axes_map)
 
@@ -325,7 +329,11 @@ class Model:
         else:
             values = model_grid.spec
         interp = RegularGridInterpolator(
-            model_grid.points, values, method="linear", bounds_error=False
+            model_grid.points,
+            values,
+            method="linear",
+            bounds_error=False,
+            fill_value=None,
         )
         return cls(interp, axes_map)
 
