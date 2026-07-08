@@ -224,8 +224,12 @@ def main():
         if args.format is not None:
             format = args.format
         else:
-            # Get the first suffix only.
-            suffix = Path(args.catalog).suffixes[0]
+            suffixes = Path(args.catalog).suffixes
+            # Use the last suffix
+            suffix = suffixes[-1]
+            if suffix == ".gz" and len(suffixes) > 1:
+                # If this is compressed FITS, use the second to last suffix.
+                suffix = suffixes[-2]
             if suffix in [".fits", ".fit", ".fts"]:
                 format = "fits"
             else:
