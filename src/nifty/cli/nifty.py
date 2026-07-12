@@ -16,10 +16,10 @@ from ..load import (
     load_phot_catalog_text,
     load_spec_text,
 )
-from ..model import IndexMap, Model, ModelGrid
+from ..model import Model, ModelGrid, linear_teff
 from ..plot import plot_corner, plot_photometry, plot_spectrum
 from ..prob import BayesianProbability
-from ..sample import linear_teff, sample_mcmc, sample_nautilus
+from ..sample import sample_mcmc, sample_nautilus
 from .print import (
     print_banner,
     print_filters,
@@ -209,9 +209,7 @@ def main():
         print_filters(filter_names)
 
         # Create the model with an extra distance parameter.
-        model = Model.phot(
-            model_grid, IndexMap(model_grid.axes + ("d",)), filter_names
-        )
+        model = Model.phot(model_grid, filter_names)
 
         # Load the ID list file or use the ID arguments.
         if args.idlist is not None:
@@ -250,12 +248,12 @@ def main():
         objects = [obj for obj in zip(ids, flux, error)]
     elif args.mode == "spec":
         wave, flux, error = load_spec_text(args.spectrum)
-        model = Model.spec(model_grid, IndexMap(model_grid.axes + ("d",)), wave)
+        model = Model.spec(model_grid, wave)
         objects = [(args.obj_id, flux, error)]
 
     # We have to create a new model for spectroscopy, since NIFTY uses the
     # original model grid's wavelength for its SED.
-    spec_model = Model.spec(model_grid, model.axes_map)
+    spec_model = Model.spec(model_grid)
 
     # Set up the probability object and the sampler.
     if args.mode == "spec" or args.frac_model_floor is None:

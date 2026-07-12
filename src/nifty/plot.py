@@ -6,8 +6,8 @@ import numpy.typing as npt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
-from .model import IndexMap
-from .sample import PosteriorSamples, linear_teff
+from .model import IndexMap, linear_teff
+from .sample import PosteriorSamples
 
 __all__ = ["plot_corner", "plot_photometry", "plot_spectrum"]
 

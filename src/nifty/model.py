@@ -13,7 +13,7 @@ import numpy.typing as npt
 from scipy.interpolate import RegularGridInterpolator, interp1d
 from tqdm import tqdm
 
-__all__ = ["IndexMap", "Model", "ModelGrid"]
+__all__ = ["IndexMap", "Model", "ModelGrid", "linear_teff"]
 
 
 class IndexMap(Mapping):
@@ -258,7 +258,6 @@ class Model:
     def phot(
         cls,
         model_grid: ModelGrid,
-        axes_map: IndexMap,
         filters: Sequence[str] | None = None,
     ) -> Self:
         """
@@ -271,8 +270,6 @@ class Model:
         ----------
         model_grid : ModelGrid
             ModelGrid used to create the interpolator.
-        axes_map : IndexMap
-            Index map for axes. Must have a distance axis with key 'd'.
         filters : tuple of str, optional
             Tuple of filter names to use from model_grid. If not provided, the
             filters are not changed from what is in model_grid.
@@ -295,13 +292,13 @@ class Model:
             bounds_error=False,
             fill_value=None,
         )
+        axes_map = IndexMap(model_grid.axes + ("d",))
         return cls(interp, axes_map)
 
     @classmethod
     def spec(
         cls,
         model_grid: ModelGrid,
-        axes_map: IndexMap,
         wave: npt.NDArray[np.float32] | None = None,
     ) -> Self:
         """
@@ -313,8 +310,6 @@ class Model:
         ----------
         model_grid : ModelGrid
             ModelGrid used to create the interpolator.
-        axes_map : IndexMap
-            Index map for axes. Must have a distance axis with key 'd'.
         wave : ndarray, optional
             New wave to resample model_grid data. If not provided, the wave is
             not changed from what is in the model_grid.
@@ -335,6 +330,7 @@ class Model:
             bounds_error=False,
             fill_value=None,
         )
+        axes_map = IndexMap(model_grid.axes + ("d",))
         return cls(interp, axes_map)
 
     def __call__(
@@ -600,3 +596,32 @@ def fill_model_fit(
         filters=model_grid.filters,
         wave=model_grid.wave,
     )
+
+
+def linear_teff(
+    a: npt.NDArray[np.float32], axes_map: IndexMap, inplace=False
+) -> npt.NDArray[np.float32]:
+    """Convert effective temperature from logarithmic to linear space.
+
+    Parameters
+    ----------
+    a : ndarray of shape (..., P)
+        Array with logarithmic effective temperature values to convert.
+        Parameters are along the last axis.
+    axes_map : IndexMap
+        Index mapping followed by the last axis of the input array.
+    inplace : bool, default=False
+        If True, the array will be modified in-place.
+
+    Returns
+    -------
+    out : ndarray of shape (..., P)
+        Array with logarithmic effective temperature values converted to linear.
+    """
+    if inplace:
+        out = a
+    else:
+        out = a.copy()
+    i = axes_map["teff"]
+    out[..., i] = 10 ** out[..., i]
+    return out

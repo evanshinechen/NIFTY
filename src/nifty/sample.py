@@ -9,10 +9,10 @@ import nautilus
 import numpy as np
 import numpy.typing as npt
 
-from .model import IndexMap, Model
+from .model import Model
 from .prob import BayesianProbability
 
-__all__ = ["PosteriorSamples", "linear_teff", "sample_mcmc", "sample_nautilus"]
+__all__ = ["PosteriorSamples", "sample_mcmc", "sample_nautilus"]
 
 
 @dataclass(frozen=True)
@@ -113,35 +113,6 @@ class PosteriorSamples:
             weights=self.weights,
             method="inverted_cdf",
         ).astype(np.float32)
-
-
-def linear_teff(
-    a: npt.NDArray[np.float32], axes_map: IndexMap, inplace=False
-) -> npt.NDArray[np.float32]:
-    """Convert effective temperature from logarithmic to linear space.
-
-    Parameters
-    ----------
-    a : ndarray of shape (..., P)
-        Array with logarithmic effective temperature values to convert.
-        Parameters are along the last axis.
-    axes_map : IndexMap
-        Index mapping followed by the last axis of the input array.
-    inplace : bool, default=False
-        If True, the array will be modified in-place.
-
-    Returns
-    -------
-    out : ndarray of shape (..., P)
-        Array with logarithmic effective temperature valeus converted to linear.
-    """
-    if inplace:
-        out = a
-    else:
-        out = a.copy()
-    i = axes_map["teff"]
-    out[..., i] = 10 ** out[..., i]
-    return out
 
 
 def sample_mcmc(
