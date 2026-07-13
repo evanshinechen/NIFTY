@@ -30,13 +30,21 @@ MODEL_LABEL = {
 }
 
 
-def print_banner() -> None:
-    """Print the NIFTY banner."""
+def print_banner(sub: str | None = None) -> None:
+    """Print the NIFTY banner.
+
+    Parameters
+    ----------
+    sub : str, optional
+        The subtitle for this specific NIFTY tool (e.g. Model Builder).
+    """
+    if sub is None:
+        sub = ""
     print()
     print("▗▖  ▗▖▗▄▄▄▖▗▄▄▄▖▗▄▄▄▖▗▖  ▗▖   Near-Infrared")
     print("▐▛▚▖▐▌  █  ▐▌     █   ▝▚▞▘    Fitting for")
     print("▐▌ ▝▜▌  █  ▐▛▀▀▘  █    ▐▌     T and Y Dwarfs")
-    print("▐▌  ▐▌▗▄█▄▖▐▌     █    ▐▌     Interpolator Builder")
+    print(f"▐▌  ▐▌▗▄█▄▖▐▌     █    ▐▌     {sub}")
     print()
     print("https://github.com/kevinhainline/NIFTY")
 

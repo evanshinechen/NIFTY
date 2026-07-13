@@ -85,7 +85,7 @@ def main():
         print(f"Error: Config path {config_path} does not exist.")
         return 1
 
-    print_banner()
+    print_banner("Model Builder")
     print(f"Model            : {model}")
     print(f"Path             : {model_path}")
     print(f"Config           : {config_path}")
