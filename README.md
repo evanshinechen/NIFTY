@@ -3,196 +3,115 @@
 # NIFTY
 *Near-Infrared Fitting for T and Y Dwarfs*
 
-*Kevin Hainline and Jake Helton*
+*Kevin Hainline, Jake Helton, and Evan Chen*
 
-NIFTY is a code designed to fit JWST NIRCam/MIRI photometry or NIRSpec prism
-spectroscopy of cold brown dwarf candidates with the LOWZ (Meisner et al. 2021),
-ATMO2020 (Phillips et al. 2020), Sonora Elf Owl v2 (Mukherjee et al. 2024,
+NIFTY is a code designed to fit JWST NIRCam/MIRI photometry or NIRSpec prism 
+spectroscopy of cold brown dwarf candidates with the LOWZ (Meisner et al. 2021), 
+ATMO2020 (Phillips et al. 2020), Sonora Elf Owl v2 (Mukherjee et al. 2024, 
 Wogan et al. 2025), or earlier Sonora Elf Owl (with PH3, Beiler et al. 2024) atmospheric models, using 
-a Bayesian framework with the emcee sampler (https://emcee.readthedocs.io/en/stable/user/sampler/). 
+a Bayesian framework with the emcee sampler (https://emcee.readthedocs.io/en/stable/user/sampler/) 
+or the Nautilus sampler (https://nautilus-sampler.readthedocs.io/en/latest/). 
 This code was described in Hainline et al. (2026) (doi.org/10.48550/arXiv.2510.00111).
 
 NIFTY operates in two modes:
 
-- **`phot`** — fit broadband photometry from a catalog of one or more sources.
-- **`spec`** — fit a single NIRSpec prism spectrum.
+- `phot` — fit broadband photometry from a catalog of one or more sources.
+- `spec` — fit a single NIRSpec prism spectrum.
 
-In both modes, NIFTY produces a corner plot, a best-fit SED or spectrum plot,
+In both modes, NIFTY produces a corner plot, a best-fit SED or spectrum plot, 
 and a text file with the 16th, 50th, and 84th percentiles of all fit parameters.
-Photometry fits typically converge in under 10 minutes per source for ~14 bands,
-though convergence time varies, especially at high SNR. Spectroscopic fits are slightly
-longer.
+Photometry fits typically converge in under 3 minutes per source for ~14 
+bands, though convergence time varies, especially at high SNR. Spectroscopic 
+fits are slightly longer.
 
 ## Installation
 
+The installation comes with the NIFTY Python package and the commands `nifty` 
+and `build_model`.
+
 Installation can be done through conda or micromamba:
-
 ```
-(base) % conda env create -f environment.yml
-(base) % conda activate NIFTY
-(NIFTY) % python -m pip install astro-sedpy corner xarray
+conda env create -f environment.yml
+conda activate NIFTY
 ```
-
-## Creating the Interpolation Files
-
-Before running NIFTY, download the model grids you want to fit against, then
-run `create_NIFTY_interpolator.py` to build the pickle file that NIFTY uses
-during fitting. You only need to do this once per model.
-
+or through pip:
 ```
-python create_NIFTY_interpolator.py \
-    -model  <model>                 \
-    -path   /path/to/model/files/   \
-    -config BD_NIRCam_MIRI_filters.json
+pip install -e .
 ```
-
-The `-model` argument accepts: `SonoraElfOwl`, `SonoraElfOwlPH3`, `ATMO2020`, `LOWZ`.
-
-**Examples:**
-
-```
-(NIFTY) % python create_NIFTY_interpolator.py \
-    -model LOWZ \
-    -path /path/to/LOWZ/ \
-    -config BD_NIRCam_MIRI_filters.json
-
-(NIFTY) % python create_NIFTY_interpolator.py \
-    -model SonoraElfOwl \
-    -path /path/to/Sonora_Elf_Owl_v2/ \
-    -config BD_NIRCam_MIRI_filters.json
-
-(NIFTY) % python create_NIFTY_interpolator.py \
-    -model SonoraElfOwlPH3 \
-    -path /path/to/Sonora_PH3/ \
-    -config BD_NIRCam_MIRI_filters.json
-
-(NIFTY) % python create_NIFTY_interpolator.py \
-    -model ATMO2020 \
-    -path /path/to/meisner_2023/ \
-    -config BD_NIRCam_MIRI_filters.json
-```
-
-By default, the output pickle files are named:
-
-| Model | Output file |
-|---|---|
-| `SonoraElfOwl` | `Sonora_v2_interp.pkl` |
-| `SonoraElfOwlPH3` | `Sonora_PH3_interp.pkl` |
-| `ATMO2020` | `ATMO2020_interp.pkl` |
-| `LOWZ` | `LOWZ_interp.pkl` |
-
-These files should stay in the same directory as `NIFTY.py`. You can override
-the output filename with the optional `-output` argument.
-
-The Sonora Elf Owl model grid spans several tens of GB and can take a few hours
-to process. The other grids are considerably smaller.
-
-### Expected model directory layouts
-
-**SonoraElfOwl** — temperature-range subdirectories containing NetCDF files:
-```
-Sonora_Elf_Owl_v2/
-    output_275.0_325.0/
-        spectra_logzz_2.0_teff_275.0_grav_17.0_mh_-0.5_co_0.5.nc
-        ...
-    output_350.0_400.0/
-    ...
-```
-
-**SonoraElfOwlPH3** — a single `.npz` file:
-```
-Sonora_PH3/
-    elf_owl_disequilibrium_PH3.npz
-```
-
-**ATMO2020** — per-metallicity subdirectories containing `.dat` files:
-```
-meisner_2023/
-    grid_m1.0/
-        spec_jwst_t700_g3.5_m1.0_kg_g3.5.dat
-        ...
-    grid_m0.5/
-    grid_p0/
-    grid_p0.3/
-```
-
-**LOWZ** — flat `models/` directory plus a CSV index:
-```
-LOWZ/
-    LOWZ_models_index.csv
-    models/
-        LOW_Z_<...>.txt
-        ...
-```
+If you are installing with pip, it is recommended that you install within a 
+**virtual environment** to keep dependencies clean. See the
+[Python tutorial](https://docs.python.org/3/tutorial/venv.html) on virtual 
+environments and packages for more information.
 
 ## Running NIFTY
 
-NIFTY requires a `-mode` argument (`phot` or `spec`) and a `-model` argument.
-The available models are `SonoraElfOwl`, `SonoraElfOwlPH3`, `ATMO2020`, and `LOWZ`.
+The easiest way to run NIFTY is through the `nifty` command.
+NIFTY runs in two modes: photometry mode and spectroscopy mode, which require 
+slightly different arguments.
 
-### Photometry mode (`-mode phot`)
+To see the available arguments, you can run: `nifty phot -h` or `nifty spec -h` 
+to display the help message for that mode.
+
+### Photometry mode (`nifty phot`)
 
 Fit broadband photometry for one or more sources from a catalog.
 
 **Single source:**
 ```
-(NIFTY) % python -W ignore NIFTY.py \
-    -mode phot \
-    -model LOWZ \
-    -config_file BD_NIRCam_MIRI_filters.json \
-    -photometry /path/to/photometry_file.fits \
-    -survey_stub JADES-GS \
-    -id 20541
+nifty phot \
+  --model path/to/model_grid.tar.gz \
+  --stub JADES-GS \
+  --config BD_NIRCam_MIRI_filters.json \
+  --id 20541 \
+  path/to/photometry_file.fits
 ```
 
-**List of sources from a file** (first column = IDs):
+**List of IDs from a file** (one ID per line):
 ```
-(NIFTY) % python -W ignore NIFTY.py \
-    -mode phot \
-    -model SonoraElfOwl \
-    -config_file BD_NIRCam_MIRI_filters.json \
-    -photometry /path/to/photometry_file.fits \
-    -survey_stub JADES-GS \
-    -idlist all_source_IDs.dat
-```
-
-**Inline list of IDs:**
-```
-(NIFTY) % python -W ignore NIFTY.py \
-    -mode phot \
-    -model ATMO2020 \
-    -config_file BD_NIRCam_MIRI_filters.json \
-    -photometry /path/to/photometry_file.fits \
-    -survey_stub JADES-GS \
-    -idarglist '20541, 452029, 430165'
+nifty phot \
+  --model path/to/model_grid.tar.gz \
+  --stub JADES-GS \
+  --config BD_NIRCam_MIRI_filters.json \
+  --idlist all_source_IDs.dat \
+  path/to/photometry_file.fits
 ```
 
-### Spectroscopy mode (`-mode spec`)
+**Multiple IDs:**
+```
+nifty phot \
+  --model path/to/model_grid.tar.gz \
+  --stub JADES-GS \
+  --config BD_NIRCam_MIRI_filters.json \
+  --id 20541 --id 452029 --id 430165 \
+  path/to/photometry_file.fits
+```
+
+### Spectroscopy mode (`nifty spec`)
 
 Fit a single NIRSpec prism spectrum. The spectrum file should be a
-whitespace-delimited text file with three columns: wavelength (microns),
-flux (nJy), and flux error (nJy). The `-id` argument is used only to
+whitespace-delimited text file with three columns: wavelength (microns), 
+flux (nJy), and flux error (nJy). The `--id` argument is used only to
 label output files.
 
 ```
-(NIFTY) % python -W ignore NIFTY.py \
-    -mode spec \
-    -model SonoraElfOwl \
-    -spectroscopy /path/to/spectrum.txt \
-    -survey_stub JADES-GS \
-    -id 20541
+nifty spec \
+  --model path/to/model_grid.tar.gz \
+  --stub JADES-GS \
+  --id 20541 \
+  path/to/spectrum.txt
 ```
 
 ### Optional arguments
 
 | Argument | Description |
 |---|---|
-| `-output <dir>` | Output folder (default: `<Model>_output/`) |
-| `-frac_model_floor <f>` | Fractional model flux floor added in quadrature to photometry errors, to account for model systematics (e.g. `0.03` for 3%). Photometry mode only; no floor is applied in spectroscopy mode. |
+| `--output` | Output folder (default: `<Model>_output/`) |
+| `--frac_model_floor` | Fractional model flux floor added in quadrature to photometry errors, to account for model systematics (e.g. `0.03` for 3%). Photometry mode only; no floor is applied in spectroscopy mode. |
+| `--sampler` | Sampler used to estimate the posterior. Currently supports `mcmc` and `nautilus` |
 
-## Configuration File (`-config_file`)
+## Configuration File (`--config`)
 
-NIFTY uses a single JSON file to describe all filter information needed for
+NIFTY uses a single JSON file to describe all filter information needed for 
 photometry fitting. Here is a sample entry:
 
 ```json
@@ -214,46 +133,47 @@ photometry fitting. Here is a sample entry:
 }
 ```
 
-- `extension`: the FITS HDU name where this filter's data lives. Ignored for
-  plain-text catalogs.
+- `extension`: the FITS HDU name where this filter's data lives. Ignored for 
+plain-text catalogs.
 - `flux` / `error`: exact column names in the photometry file.
 - `wavelength`: filter central wavelength in microns, used for plotting.
 
 An example config file for JADES NIRCam + MIRI observations is included as
 `BD_NIRCam_MIRI_filters.json`.
 
-## Photometry File Format (`-photometry`)
+## Photometry File Format
 
 NIFTY can read:
 
-- **FITS** files, with filter fluxes and errors in named HDU extensions and
-  columns as specified in the config JSON.
+- **FITS** files, with filter fluxes and errors in named HDU extensions and 
+columns as specified in the config JSON.
 - **Plain-text** catalogs, whitespace-delimited, one row per object.
 
 For plain-text catalogs, include an `ID` column (case-sensitive) and flux/error
-columns whose names match the config JSON exactly. Do not prefix the header line
-with `#`. Example:
+columns whose names match the config JSON exactly. Do not prefix the header 
+line with `#`. Example:
 
 ```
 ID     F115W_CIRC3     F115W_CIRC3_e     F444W_CIRC3     F444W_CIRC3_e
 101    0.123           0.010             0.456           0.025
 ```
 
-All fluxes and errors should be in nJy. A minimum relative flux error of 5% is
+All fluxes and errors should be in nJy. A minimum relative flux error of 5% is 
 applied automatically; errors below this floor are inflated to `0.05 * flux`.
 
 ## Output Files
 
 For each fitted source, NIFTY writes the following files to the output directory:
 
+Each file name is prefixed with `<stub>_<ID>_<Model>_`.
 | File | Description |
 |---|---|
-| `<stub>_<ID>.h5` | Full emcee chain (HDF5) |
-| `<stub>_<ID>_Corner_<Model>.png` | Corner plot of the posterior |
-| `<stub>_<ID>_SED_<Model>.png` | Best-fit SED or spectrum plot |
-| `<stub>_<ID>_SED_<Model>.txt` | Model spectrum envelope (16th, 50th, 84th percentile flux, in nJy, vs wavelength in microns) |
-| `<stub>_<ID>_parameters_<Model>.txt` | 16th, 50th, and 84th percentile parameter values, plus chi-square. Distance is in parsecs. |
-| `<stub>_<ID>_photometry_<Model>.txt` | Model photometry at filter wavelengths (**phot mode only**) |
+| `sampler_backend.h5` | Backend file for sampler (e.g. MCMC chains) |
+| `corner.png` | Corner plot of the posterior |
+| `SED.png` | Best-fit SED or spectrum plot |
+| `SED.txt` | Model spectrum envelope (16th, 50th, 84th percentile flux, in nJy, vs wavelength in microns) |
+| `parameters.txt` | 16th, 50th, and 84th percentile parameter values, plus chi-square. Distance is in parsecs. |
+| `model_photometry.txt` / `model_spectroscopy.txt` | 50th percentile model fit for either spectroscopy or photometry depending on mode.|
 
 ## Model Parameters
 
@@ -267,6 +187,70 @@ For each fitted source, NIFTY writes the following files to the output directory
 All fits assume a source radius of 1 Jupiter radius. Distances are always
 reported in parsecs.
 
+
+## Creating the ModelGrid Files
+
+Before running NIFTY, download the model grids you want to fit against, then 
+run `build_model` to build the model grid file that NIFTY uses during fitting. 
+
+For a more detailed description of parameters, run `build_model -h`.
+
+```
+build_model \
+    --path path/to/model/files/ \
+    --config BD_NIRCam_MIRI_filters.json \
+    ModelName
+```
+
+The valid model names are `SonoraElfOwl`, `SonoraElfOwlPH3`, `ATMO2020`, `LOWZ`.
+
+Typically, there are two ModelGrid files outputted. The **raw grid** is the 
+grid created by reading in all the points that are part of the model. However, 
+many models do not have values at all grid points, so missing points are filled. 
+with NaN. The **complete grid** has  values for all grid points. If the raw 
+grid is missing values, they are filled by a fitting procedure (see code for 
+details). If the raw grid is already complete, only the complete grid is saved.
+
+By default, the output model grid files are named 
+`<Model>_raw_ModelGrid.tar.gz` and `<Model>_complete_ModelGrid.tar.gz`.
+
+The Sonora Elf Owl model grid spans several tens of GB and can take a few hours
+to process. The other grids are considerably smaller.
+
+### Expected Model File Layouts
+
+**SonoraElfOwl** — directory of temperature-range tarballs containing NetCDF 
+files:
+```
+Sonora_Elf_Owl_v2/
+    teff_275_325.tar.gz
+    teff_350_400.tar.gz
+    ...
+```
+
+**SonoraElfOwlPH3** — a single `.npz` file:
+```
+elf_owl_disequilibrium_PH3.npz
+```
+
+**ATMO2020** — per-metallicity subdirectories containing `.dat` files:
+```
+meisner_2023/
+    grid_m1.0/
+        spec_jwst_t700_g3.5_m1.0_kg_g3.5.dat
+        ...
+    grid_m0.5/
+    grid_p0/
+    grid_p0.3/
+```
+
+**LOWZ** — CSV index and models tarball
+```
+LOWZ/
+    LOWZ_models_index.csv
+    models.tar.gz
+```
+
 ## References
 
 - Meisner et al. 2021 (LOWZ): https://doi.org/10.3847/1538-4357/ac013c
@@ -275,3 +259,4 @@ reported in parsecs.
 - Wogan et al. 2025 (Sonora Elf Owl v2): https://doi.org/10.3847/2515-5172/add407
 - Beiler et al. 2024: https://doi.org/10.5281/zenodo.11370829
 - Foreman-Mackey et al. 2013 (emcee): https://doi.org/10.1086/670067
+- Lange 2023 (nautilus): https://doi.org/10.1093/mnras/stad2441
