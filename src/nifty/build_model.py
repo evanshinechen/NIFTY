@@ -13,7 +13,14 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from scipy.interpolate import interp1d
-from sedpy.observate import Filter
+
+try:
+    from sedpy.observate import Filter
+except ImportError:
+    raise ImportError(
+        "Building models requires the [build-model] optional dependencies. "
+        "Install with `pip install astro-nifty[build-model]`"
+    )
 from tqdm import tqdm
 
 from .model import ModelGrid
@@ -258,12 +265,11 @@ def build_sonora_elf_owl(
     """
     try:
         import xarray
-    except ImportError as e:
-        e.add_note(
-            "Error: xarray is required for Sonora Elf Owl models. "
-            "Install with: pip install xarray"
+    except ImportError:
+        raise ImportError(
+            "Building models requires the [build-model] optional dependencies. "
+            "Install with `pip install astro-nifty[build-model]`"
         )
-        raise
     path = Path(path)
     values = []
     for part in path.iterdir():
