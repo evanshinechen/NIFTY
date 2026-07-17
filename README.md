@@ -29,19 +29,26 @@ fits are slightly longer.
 The installation comes with the NIFTY Python package and the commands `nifty` 
 and `build_model`.
 
-Installation can be done through conda or micromamba:
+The easiest way to install NIFTY is through pip:
 ```
-conda env create -f environment.yml
-conda activate NIFTY
+pip install astro-nifty
 ```
-or through pip:
+The main pip installation only includes the dependencies required for sampling. 
+If you also want to build your own models, install the optional dependencies:
 ```
-pip install -e .
+pip install astro-nifty[build-model]
 ```
 If you are installing with pip, it is recommended that you install within a 
 **virtual environment** to keep dependencies clean. See the
 [Python tutorial](https://docs.python.org/3/tutorial/venv.html) on virtual 
 environments and packages for more information.
+
+Alternatively, you can clone the NIFTY repository and set up an environment 
+using conda or micromamba:
+```
+conda env create -f environment.yml
+conda activate NIFTY
+```
 
 ## Running NIFTY
 
