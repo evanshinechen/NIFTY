@@ -30,8 +30,6 @@ from .print import (
     print_separator,
 )
 
-warnings.filterwarnings("ignore")
-
 
 def _min_rel_error(flux, error, min_rel_error=0.05):
     """Restrict error to a minimum relative error and return changed indices.
@@ -186,6 +184,8 @@ def validate_args(args: argparse.Namespace):
 
 
 def main():
+    warnings.filterwarnings("ignore")
+
     args = parse_arguments()
     validate_args(args)
     print_banner()
