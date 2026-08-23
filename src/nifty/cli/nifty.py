@@ -1,6 +1,7 @@
 """Main NIFTY CLI."""
 
 import argparse
+import io
 import re
 import time
 import warnings
@@ -206,6 +207,21 @@ def main():
             }
         )
     else:
+        # Run a simple test to make sure that the user has the appropriate
+        # TeX engine installed.
+        with plt.rc_context({"text.usetex": True}):
+            try:
+                fig, ax = plt.subplots()
+                ax.text(0, 0, r"$x^2$")
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png")
+            except Exception:
+                raise RuntimeError(
+                    "System TeX not available for rendering. "
+                    "Use --notex to use Matplotlib's Mathtext for plots."
+                )
+            finally:
+                plt.close(fig)
         print("Using system TeX engine for plotting.")
         matplotlib.rcParams.update(
             {
