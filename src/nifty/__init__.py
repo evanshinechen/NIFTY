@@ -3,7 +3,7 @@
 from . import cli, load, model, plot, prob, sample
 from .model import IndexMap, Model, ModelGrid, linear_teff
 from .prob import BayesianProbability
-from .sample import PosteriorSamples
+from .sample import PosteriorSamples, sample_mcmc, sample_nautilus
 
 try:
     from ._version import __version__
@@ -16,7 +16,6 @@ __all__ = [
     "Model",
     "ModelGrid",
     "PosteriorSamples",
-    "build_model",
     "cli",
     "linear_teff",
     "load",
