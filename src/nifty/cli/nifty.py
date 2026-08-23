@@ -1,6 +1,7 @@
 """Main NIFTY CLI."""
 
 import argparse
+import re
 import time
 import warnings
 from functools import partial
@@ -176,8 +177,17 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def validate_args(args: argparse.Namespace):
+    if not bool(re.fullmatch(r"[A-Za-z0-9_-]+", args.stub)):
+        raise ValueError(
+            "Stub may only contain alphanumeric characters, hyphen, or "
+            "underscore."
+        )
+
+
 def main():
     args = parse_arguments()
+    validate_args(args)
     print_banner()
 
     if args.notex:
