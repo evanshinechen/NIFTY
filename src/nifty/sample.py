@@ -250,6 +250,7 @@ def sample_nautilus(
         n_live=n_live,
         vectorized=True,
         filepath=backend_file,
+        resume=False,
     )
     sampler.run(verbose=progress_bar)
     samples, log_w, log_l = sampler.posterior()
