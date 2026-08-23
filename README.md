@@ -7,9 +7,10 @@
 
 NIFTY is a code designed to fit JWST NIRCam/MIRI photometry or NIRSpec prism 
 spectroscopy of cold brown dwarf candidates with the LOWZ (Meisner et al. 2021), 
-ATMO2020 (Phillips et al. 2020), Sonora Elf Owl v2 (Mukherjee et al. 2024, 
-Wogan et al. 2025), or earlier Sonora Elf Owl (with PH3, Beiler et al. 2024) atmospheric models, using 
-a Bayesian framework with the emcee sampler (https://emcee.readthedocs.io/en/stable/user/sampler/) 
+ATMO2020 (Phillips et al. 2020), Sonora Flame Skimmer (Mang et al. 2026), 
+Sonora Elf Owl v2 (Mukherjee et al. 2024, Wogan et al. 2025), or earlier Sonora Elf 
+Owl (with PH3, Beiler et al. 2024) atmospheric models, using a Bayesian framework 
+with the emcee sampler (https://emcee.readthedocs.io/en/stable/user/sampler/) 
 or the Nautilus sampler (https://nautilus-sampler.readthedocs.io/en/latest/). 
 This code was described in Hainline et al. (2026) (doi.org/10.48550/arXiv.2510.00111).
 
@@ -186,6 +187,7 @@ Each file name is prefixed with `<stub>_<ID>_<Model>_`.
 
 | Model | Parameters fit |
 |---|---|
+| `SonoraFlameSkimmerQuickstart` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
 | `SonoraElfOwl` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
 | `SonoraElfOwlPH3` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
 | `ATMO2020` | Teff, log(g), [M/H], distance (pc) |
@@ -220,7 +222,9 @@ build_model \
     ModelName
 ```
 
-The valid model names are `SonoraElfOwl`, `SonoraElfOwlPH3`, `ATMO2020`, `LOWZ`.
+The valid model names are `SonoraFlameSkimmerQuickstart`, `SonoraElfOwl`, 
+`SonoraElfOwlPH3`, `ATMO2020`, `LOWZ`. At this time, NIFTY does not support
+creating the SonoraFlameSkimmer complete models from scratch.
 
 Typically, there are two ModelGrid files outputted. The **raw grid** is the 
 grid created by reading in all the points that are part of the model. However, 
@@ -236,6 +240,11 @@ The Sonora Elf Owl model grid spans several tens of GB and can take a few hours
 to process. The other grids are considerably smaller.
 
 ### Expected Model File Layouts
+
+**SonoraFlameSkimmerQuickstart** — A single zip file:
+```
+spectra_R3k_quickstart.zip
+```
 
 **SonoraElfOwl** — directory of temperature-range tarballs containing NetCDF 
 files:
@@ -278,3 +287,4 @@ LOWZ/
 - Beiler et al. 2024: https://doi.org/10.5281/zenodo.11370829
 - Foreman-Mackey et al. 2013 (emcee): https://doi.org/10.1086/670067
 - Lange 2023 (nautilus): https://doi.org/10.1093/mnras/stad2441
+- Mang et al. 2026 (Sonora Flame Skimmer): https://doi.org/10.48550/arXiv.2608.06454
