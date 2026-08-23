@@ -232,6 +232,11 @@ def main():
     # Load the model grid.
     print(f"Loading the model grid from {args.model}")
     model_grid = ModelGrid.load(args.model)
+    if (
+        args.mode == "phot" and np.any(np.isnan(model_grid.phot))
+        or np.any(np.isnan(model_grid.spec))
+    ):
+        raise RuntimeError("ModelGrid is not complete. Some points are NaN.")
     print(f"Loaded model grid for {model_grid.model_name}.")
     print("  The model parameter range explored:")
     print_model_grid_range(model_grid, indent=3)
