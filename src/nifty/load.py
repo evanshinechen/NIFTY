@@ -48,7 +48,9 @@ def load_phot_catalog_text(
         Flux errors for each of the N objects through F filters.
     """
     data = pd.read_csv(path, sep=r"\s+", engine="c", comment="#")
-    data = data.set_index("ID").loc[ids].reset_index(drop=True)
+    data = data.set_index("ID").loc[ids].reset_index()
+    if not data["ID"].is_unique:
+        raise ValueError("Duplicate ID values present in catalog.")
     flux_cols = [desc["flux"] for desc in filter_desc]
     error_cols = [desc["error"] for desc in filter_desc]
     flux = data.loc[:, flux_cols].to_numpy(dtype=np.float32)
