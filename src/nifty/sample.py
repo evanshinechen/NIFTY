@@ -169,10 +169,7 @@ def sample_mcmc(
         n_walkers,
         n_dim,
         prob.log_posterior,
-        moves=[
-            (emcee.moves.DEMove(), 0.8),
-            (emcee.moves.DESnookerMove(), 0.2),
-        ],
+        moves=emcee.moves.DEMove(),
         args=(obs_flux, obs_error),
         backend=backend,
         vectorize=True,
