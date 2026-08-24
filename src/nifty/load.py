@@ -189,4 +189,6 @@ def load_filter_info(path: str | Path) -> Sequence[dict[str, str | int]]:
         }
         for name, load_info in filter_config.items()
     ]
+    if len(filters) == 0:
+        raise ValueError(f"No filters found in {path}")
     return filters
