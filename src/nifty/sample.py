@@ -197,10 +197,12 @@ def sample_mcmc(
         prev_tau = tau
 
     tau = sampler.get_autocorr_time(quiet=True)
+    if np.any(np.isnan(tau)):
+        raise RuntimeError("Sampler did not converge.")
     # Number of initial steps that are skipped.
     burn_in = int(2 * np.max(tau))
     # Only include every thin steps to save memory.
-    thin = int(np.min(tau) / 2)
+    thin = max(int(np.min(tau) / 2), 1)
     samples = sampler.get_chain(discard=burn_in, thin=thin, flat=True)
     return PosteriorSamples(samples)
 
