@@ -546,7 +546,7 @@ def main():
         if len(convergence_times) % 2 == 0:
             median_time = (
                 convergence_times[len(convergence_times) // 2][1]
-                + convergence_times[(len(convergence_times) + 1) // 2][1]
+                + convergence_times[(len(convergence_times) - 1) // 2][1]
             ) / 2
         else:
             median_time = convergence_times[len(convergence_times) // 2][1]
