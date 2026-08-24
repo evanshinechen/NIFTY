@@ -23,6 +23,7 @@ AXIS_LABEL = {
 
 # Model key to readable name.
 MODEL_LABEL = {
+    "SonoraFlameSkimmerQuickstart": "Sonora Flame Skimmer (Quickstart)",
     "SonoraElfOwl": "Sonora Elf Owl",
     "SonoraElfOwlPH3": "Sonora Elf Owl + PH3",
     "ATMO2020": "ATMO2020",
