@@ -269,8 +269,10 @@ def main():
         # Load the ID list file or use the ID arguments.
         if args.idlist is not None:
             with open(args.idlist, "r") as f:
-                lines = f.readlines()
-            ids = [int(line) for line in lines]
+                items = f.read().strip().split()
+            ids = [int(line) for line in items]
+            if len(ids) == 0:
+                raise ValueError(f"No IDs in file {args.idlist}")
         else:
             ids = args.obj_id
 
