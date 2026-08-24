@@ -150,9 +150,11 @@ def plot_photometry(
         Axes with photometry plotted.
     """
     model_spec_wave = model_spec_wave / 1e4  # um
+    valid_obj_flux = obj_flux[valid_flux]
+    valid_central_wave = central_wave[valid_flux]
     ax.scatter(
-        central_wave[valid_flux],
-        obj_flux[valid_flux],
+        valid_central_wave,
+        valid_obj_flux,
         s=40,
         color="black",
         alpha=1.0,
@@ -160,8 +162,8 @@ def plot_photometry(
         label="Observed Photometry",
     )
     ax.errorbar(
-        central_wave[valid_flux],
-        obj_flux[valid_flux],
+        valid_central_wave,
+        valid_obj_flux,
         yerr=obj_error[valid_flux],
         color="black",
         ls="None",
@@ -208,9 +210,13 @@ def plot_photometry(
     xlim_min = 0.9 * np.min(central_wave)
     xlim_max = 1.1 * np.max(central_wave)
     ax.set_xlim(xlim_min, xlim_max)
-    ymin = max(np.min(obj_flux) / 10.0, 1e-2)
-    ymax = 11 * np.max(obj_flux)
-    ax.set_ylim(ymin, ymax)
+    if valid_obj_flux.size == 0:
+        ymin = 1
+        ymax = 11
+    else:
+        ymin = max(np.min(valid_obj_flux) / 10.0, 1e-2)
+        ymax = 11 * np.max(valid_obj_flux)
+    ax.set_ylim(float(ymin), float(ymax))
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("Wavelength (microns)")
@@ -316,8 +322,15 @@ def plot_spectrum(
     ax.set_title(f"Source ID {obj_id}", fontsize=15)
     xlim_min, xlim_max = 0.8, 5.2
     ax.set_xlim(xlim_min, xlim_max)
-    ylim_max = 1.2 * np.max(obj_flux[(wave > xlim_min) & (wave < xlim_max)])
-    ylim_min = -0.1 * ylim_max
+    in_range = obj_flux[valid_flux][
+        (wave[valid_flux] > xlim_min) & (wave[valid_flux] < xlim_max)
+    ]
+    if in_range.size == 0:
+        ylim_max = 1
+        ylim_min = -0.1
+    else:
+        ylim_max = 1.2 * np.max(in_range)
+        ylim_min = -0.1 * ylim_max
     ax.plot(
         [xlim_min, xlim_max],
         [0, 0],
