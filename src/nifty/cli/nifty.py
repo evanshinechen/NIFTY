@@ -280,15 +280,19 @@ def main():
             format = args.format
         else:
             suffixes = Path(args.catalog).suffixes
-            # Use the last suffix
-            suffix = suffixes[-1]
-            if suffix == ".gz" and len(suffixes) > 1:
-                # If this is compressed FITS, use the second to last suffix.
-                suffix = suffixes[-2]
-            if suffix in [".fits", ".fit", ".fts"]:
-                format = "fits"
-            else:
+            if len(suffixes) == 0:
                 format = "text"
+            else:
+                # Use the last suffix
+                suffixes = [s.lower() for s in suffixes]
+                suffix = suffixes[-1]
+                if (suffix == ".gz" or suffix == ".fz") and len(suffixes) > 1:
+                    # If this is compressed FITS, use the second to last suffix.
+                    suffix = suffixes[-2]
+                if suffix in [".fits", ".fit", ".fts"]:
+                    format = "fits"
+                else:
+                    format = "text"
         if format == "fits":
             flux, error = load_phot_catalog_fits(args.catalog, filter_info, ids)
         else:
