@@ -199,7 +199,8 @@ reported in parsecs.
 ## The ModelGrid Files
 
 While you can create your own ModelGrid files for fitting (see below), we have prepared
-files for the ATMO2020, LOWZ, Sonora Elf Owl, and SonoraElfOwlPH3 fits at this link:
+files for the ATMO2020, LOWZ, Sonora Elf Owl, SonoraElfOwlPH3, and SonoraFlameSkimmerQuickstart
+fits at this link:
 
 [https://arizona.box.com/v/NiftyModelGrids](https://arizona.box.com/v/NiftyModelGrids)
 
