@@ -124,7 +124,7 @@ class BayesianProbability:
         # The bounds for distance requires d > 0, so we can safely take the log.
         out[in_bounds] = -np.log(theta[..., self._d_index][in_bounds])
         # Correct for sampling in log(teff) by making p(theta) prop to teff.
-        out[in_bounds] += np.log(theta[..., self._teff_index][in_bounds])
+        out[in_bounds] += np.log(10) * theta[..., self._teff_index][in_bounds]
         return out
 
     def log_likelihood(
@@ -157,11 +157,15 @@ class BayesianProbability:
         variance = np.square(obs_error) + np.square(
             self.frac_model_floor * model_flux
         )
-        chi_squared = np.sum(
-            np.where(valid, np.square(obs_flux - model_flux) / variance, 0.0),
+        log_likelihood = -0.5 * np.sum(
+            np.where(
+                valid,
+                np.square(obs_flux - model_flux) / variance + np.log(variance),
+                0.0,
+            ),
             axis=-1,
         )
-        return np.where(np.isfinite(chi_squared), -0.5 * chi_squared, -np.inf)
+        return np.where(np.isfinite(log_likelihood), log_likelihood, -np.inf)
 
     def log_posterior(
         self,

@@ -1,6 +1,8 @@
 """Main NIFTY CLI."""
 
 import argparse
+import io
+import re
 import time
 import warnings
 from functools import partial
@@ -28,8 +30,6 @@ from .print import (
     print_model_grid_range,
     print_separator,
 )
-
-warnings.filterwarnings("ignore")
 
 
 def _min_rel_error(flux, error, min_rel_error=0.05):
@@ -176,8 +176,19 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def validate_args(args: argparse.Namespace):
+    if not bool(re.fullmatch(r"[A-Za-z0-9_-]+", args.stub)):
+        raise ValueError(
+            "Stub may only contain alphanumeric characters, hyphen, or "
+            "underscore."
+        )
+
+
 def main():
+    warnings.filterwarnings("ignore")
+
     args = parse_arguments()
+    validate_args(args)
     print_banner()
 
     if args.notex:
@@ -196,6 +207,21 @@ def main():
             }
         )
     else:
+        # Run a simple test to make sure that the user has the appropriate
+        # TeX engine installed.
+        with plt.rc_context({"text.usetex": True}):
+            try:
+                fig, ax = plt.subplots()
+                ax.text(0, 0, r"$x^2$")
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png")
+            except Exception:
+                raise RuntimeError(
+                    "System TeX not available for rendering. "
+                    "Use --notex to use Matplotlib's Mathtext for plots."
+                )
+            finally:
+                plt.close(fig)
         print("Using system TeX engine for plotting.")
         matplotlib.rcParams.update(
             {
@@ -206,6 +232,11 @@ def main():
     # Load the model grid.
     print(f"Loading the model grid from {args.model}")
     model_grid = ModelGrid.load(args.model)
+    if (
+        args.mode == "phot" and np.any(np.isnan(model_grid.phot))
+        or np.any(np.isnan(model_grid.spec))
+    ):
+        raise RuntimeError("ModelGrid is not complete. Some points are NaN.")
     print(f"Loaded model grid for {model_grid.model_name}.")
     print("  The model parameter range explored:")
     print_model_grid_range(model_grid, indent=3)
@@ -238,8 +269,10 @@ def main():
         # Load the ID list file or use the ID arguments.
         if args.idlist is not None:
             with open(args.idlist, "r") as f:
-                lines = f.readlines()
-            ids = [int(line) for line in lines]
+                items = f.read().strip().split()
+            ids = [int(line) for line in items]
+            if len(ids) == 0:
+                raise ValueError(f"No IDs in file {args.idlist}")
         else:
             ids = args.obj_id
 
@@ -247,15 +280,19 @@ def main():
             format = args.format
         else:
             suffixes = Path(args.catalog).suffixes
-            # Use the last suffix
-            suffix = suffixes[-1]
-            if suffix == ".gz" and len(suffixes) > 1:
-                # If this is compressed FITS, use the second to last suffix.
-                suffix = suffixes[-2]
-            if suffix in [".fits", ".fit", ".fts"]:
-                format = "fits"
-            else:
+            if len(suffixes) == 0:
                 format = "text"
+            else:
+                # Use the last suffix
+                suffixes = [s.lower() for s in suffixes]
+                suffix = suffixes[-1]
+                if (suffix == ".gz" or suffix == ".fz") and len(suffixes) > 1:
+                    # If this is compressed FITS, use the second to last suffix.
+                    suffix = suffixes[-2]
+                if suffix in [".fits", ".fit", ".fts"]:
+                    format = "fits"
+                else:
+                    format = "text"
         if format == "fits":
             flux, error = load_phot_catalog_fits(args.catalog, filter_info, ids)
         else:
@@ -509,7 +546,7 @@ def main():
         if len(convergence_times) % 2 == 0:
             median_time = (
                 convergence_times[len(convergence_times) // 2][1]
-                + convergence_times[(len(convergence_times) + 1) // 2][1]
+                + convergence_times[(len(convergence_times) - 1) // 2][1]
             ) / 2
         else:
             median_time = convergence_times[len(convergence_times) // 2][1]

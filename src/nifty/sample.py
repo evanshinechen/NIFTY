@@ -169,10 +169,7 @@ def sample_mcmc(
         n_walkers,
         n_dim,
         prob.log_posterior,
-        moves=[
-            (emcee.moves.DEMove(), 0.8),
-            (emcee.moves.DESnookerMove(), 0.2),
-        ],
+        moves=emcee.moves.DEMove(),
         args=(obs_flux, obs_error),
         backend=backend,
         vectorize=True,
@@ -200,10 +197,12 @@ def sample_mcmc(
         prev_tau = tau
 
     tau = sampler.get_autocorr_time(quiet=True)
+    if np.any(np.isnan(tau)):
+        raise RuntimeError("Sampler did not converge.")
     # Number of initial steps that are skipped.
     burn_in = int(2 * np.max(tau))
     # Only include every thin steps to save memory.
-    thin = int(np.min(tau) / 2)
+    thin = max(int(np.min(tau) / 2), 1)
     samples = sampler.get_chain(discard=burn_in, thin=thin, flat=True)
     return PosteriorSamples(samples)
 
@@ -250,6 +249,7 @@ def sample_nautilus(
         n_live=n_live,
         vectorized=True,
         filepath=backend_file,
+        resume=False,
     )
     sampler.run(verbose=progress_bar)
     samples, log_w, log_l = sampler.posterior()

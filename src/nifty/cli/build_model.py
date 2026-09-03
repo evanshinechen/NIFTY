@@ -111,7 +111,7 @@ def main():
         filter_names=filter_names,
     )
 
-    if np.any(np.isnan(model_grid.phot)):
+    if np.any(np.isnan(model_grid.phot)) or np.any(np.isnan(model_grid.spec)):
         print("Saving raw model grid.")
         model_grid.save(output_raw_path)
         print("Filling model grid.")
