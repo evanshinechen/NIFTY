@@ -233,7 +233,8 @@ def main():
     print(f"Loading the model grid from {args.model}")
     model_grid = ModelGrid.load(args.model)
     if (
-        args.mode == "phot" and np.any(np.isnan(model_grid.phot))
+        args.mode == "phot"
+        and np.any(np.isnan(model_grid.phot))
         or np.any(np.isnan(model_grid.spec))
     ):
         raise RuntimeError("ModelGrid is not complete. Some points are NaN.")

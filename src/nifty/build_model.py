@@ -12,12 +12,12 @@ from typing import Protocol, Self
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from scipy.interpolate import interp1d
 from sedpy.observate import Filter
 from tqdm import tqdm
 
 from .load import load_filter_info
 from .model import ModelGrid
+from .spectra import flambda_to_fnu, resample_spectrum
 
 __all__ = [
     "build_atmo2020",
@@ -119,28 +119,6 @@ def _ab_mag_to_fnu_cgs(
     return 10.0 ** ((ab_mag + 48.60) / -2.5)
 
 
-def _flambda_to_fnu(
-    wave: npt.NDArray[np.float32], flux: npt.NDArray[np.float32]
-) -> npt.NDArray[np.float32]:
-    """
-    Convert flux in f_lambda to f_nu.
-
-    Parameters
-    ----------
-    wave : ndarray
-        Wavelength in Angstroms.
-    flux : ndarray
-        f_lambda in erg/s/cm^2/Ang in the same order as wave.
-
-    Returns
-    -------
-    flux_fnu : ndarray
-        Flux in f_nu in units erg/s/cm^2/Hz.
-    """
-    c = 2.998e18
-    return flux * np.square(wave) / c
-
-
 def load_filters(path: str | Path) -> tuple[list[Filter], list[str]]:
     """
     Load filters from the NIFTY JSON config file.
@@ -186,34 +164,6 @@ def _filter_fluxes(
     for i, f in enumerate(filters):
         fluxes[..., i] = _ab_mag_to_fnu_cgs(f.ab_mag(wave, flux))
     return fluxes
-
-
-def _resample_spectrum(
-    wave: npt.NDArray[np.float32], flux: npt.NDArray[np.float32]
-) -> npt.NDArray[np.float32]:
-    """
-    Resample a model spectrum onto LOWER_RES_WAVE using linear interpolation.
-
-    Parameters
-    ----------
-    wave : ndarray of shape (W,)
-        Wavelength in Angstroms. Must be monotonically increasing.
-    flux : ndarray of shape (..., W)
-        f_lambda in erg/s/cm^2/Ang in the same order as wave.
-
-    Returns
-    -------
-    resampled : ndarray of shape (..., len(LOWER_RES_WAVE))
-        Resampled wave in erg/s/cm^2/Ang.
-
-    Notes
-    -----
-    Linear interpolation is used for speed. For a pre-built interpolator grid
-    evaluated at lower resolution, the difference in flux conservation is
-    negligible compared with the grid interpolation error itself.
-    """
-    interp = interp1d(wave, flux, axis=-1, fill_value="extrapolate")
-    return interp(LOWER_RES_WAVE)
 
 
 # ============================================================
@@ -303,9 +253,9 @@ def build_sonora_flame_skimmer_quickstart(
             flux = flux[sort_i]
             arrays = (
                 _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
-                _flambda_to_fnu(
+                flambda_to_fnu(
                     LOWER_RES_WAVE,  # Ang
-                    _resample_spectrum(wave, flux),  # erg/s/cm^2/Ang
+                    resample_spectrum(LOWER_RES_WAVE, wave, flux),
                 )
                 * 1e23
                 * 1e9,  # nJy
@@ -399,9 +349,9 @@ def build_sonora_elf_owl(
                     flux = flux[sort_i]
                     arrays = (
                         _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
-                        _flambda_to_fnu(
+                        flambda_to_fnu(
                             LOWER_RES_WAVE,  # Ang
-                            _resample_spectrum(wave, flux),  # erg/s/cm^2/Ang
+                            resample_spectrum(LOWER_RES_WAVE, wave, flux),
                         )
                         * 1e23
                         * 1e9,  # nJy
@@ -509,12 +459,14 @@ def build_sonora_ph3(
             phot[start:stop] = _filter_fluxes(
                 wave, batch, filters
             )  # erg/s/cm^2/Hz
-            spec[start:stop] = _resample_spectrum(wave, batch)  # erg/s/cm^2/Ang
+            spec[start:stop] = resample_spectrum(
+                LOWER_RES_WAVE, wave, batch
+            )  # erg/s/cm^2/Ang
         phot = phot.reshape(original_shape[:-1] + (len(filters),))
         spec = spec.reshape(original_shape[:-1] + (len(LOWER_RES_WAVE),))
         del flux
     phot *= 1e23 * 1e9  # nJy
-    spec = (_flambda_to_fnu(LOWER_RES_WAVE, spec) * 1e23 * 1e9).astype(
+    spec = (flambda_to_fnu(LOWER_RES_WAVE, spec) * 1e23 * 1e9).astype(
         np.float32
     )  # nJy
     return ModelGrid(
@@ -618,9 +570,9 @@ def build_atmo2020(
             flux = data[:, 1] * 1e-1  # erg/s/cm^2/Ang
             arrays = (
                 _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
-                _flambda_to_fnu(
+                flambda_to_fnu(
                     LOWER_RES_WAVE,  # Ang
-                    _resample_spectrum(wave, flux),  # erg/s/cm^2/Ang
+                    resample_spectrum(LOWER_RES_WAVE, wave, flux),
                 )
                 * 1e23
                 * 1e9,  # nJy
@@ -718,9 +670,9 @@ def build_lowz(
                 flux = data[:, 1] * 1e-7  # erg/s/cm^2/Ang
                 arrays = (
                     _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
-                    _flambda_to_fnu(
+                    flambda_to_fnu(
                         LOWER_RES_WAVE,  # Ang
-                        _resample_spectrum(wave, flux),  # erg/s/cm^2/Ang
+                        resample_spectrum(LOWER_RES_WAVE, wave, flux),
                     )
                     * 1e23
                     * 1e9,  # nJy
