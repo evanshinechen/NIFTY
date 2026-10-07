@@ -17,7 +17,7 @@ LABELS = {
     "logg": r"$\mathrm{log}_{10} \left( g \right)$",
     "kzz": r"$\mathrm{log}_{10} \left( K_{\mathrm{zz}} \right)$",
     "mh": r"[M/H]",
-    "co": r"[C/O]",
+    "co": r"C/O",
     "d": r"$d/\mathrm{pc}$",
 }
 

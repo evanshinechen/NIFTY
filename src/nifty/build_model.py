@@ -246,7 +246,8 @@ def build_sonora_flame_skimmer_quickstart(
                 np.log10(params[1]) + 2.0,  # cgs
                 params[2],
                 params[3],
-                params[4],
+                # Normalize to absolute C/O based on Flame Skimmer's solar C/O.
+                params[4] * 0.458,
             )
             flux = data["flux_emission"].values * 1e-8  # erg/s/cm^2/Ang
             flux = flux[::-1]
@@ -346,7 +347,8 @@ def build_sonora_elf_owl(
                         np.log10(all_params["logg"]["value"]) + 2.0,  # cgs
                         all_params["logkzz"],
                         all_params["mh"],
-                        all_params["cto"],
+                        # Normalize to absolute C/O based on Elf Owl's solar C/O.
+                        all_params["cto"] * 0.458,
                     )
                     flux = data["flux"].values * 1e-8  # erg/s/cm^2/Ang
                     flux = flux[::-1]
@@ -430,7 +432,8 @@ def build_sonora_ph3(
         np.log10(data["logg"]) + 2,  # cm/s^2
         data["logkzz"],
         data["logmh"],
-        data["cto"],
+        # Normalize to absolute C/O based on Elf Owl's solar C/O.
+        data["cto"] * 0.458,
     )
     points = tuple(p.astype(np.float32) for p in points)
     # Wavelength from wave number.
