@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from .load import load_filter_info
 from .model import ModelGrid
-from .spectra import flambda_to_fnu, resample_spectrum
+from .spectra import flambda_to_fnu, resample_spectrum, trim_wavelength_coverage
 
 __all__ = [
     "build_atmo2020",
@@ -221,6 +221,8 @@ def build_sonora_flame_skimmer_quickstart(
             "Install with `pip install astro-nifty[build-model]`"
         )
     values = []
+    model_wave = None
+    new_wave = LOWER_RES_WAVE
     with zipfile.ZipFile(path) as zip_ref:
         with zip_ref.open("R3000_starter_spectra_manifest.csv") as f:
             index = pd.read_csv(f)
@@ -246,16 +248,18 @@ def build_sonora_flame_skimmer_quickstart(
                 params[3],
                 params[4],
             )
-            wave = data["wavelength"].values * 1e4  # Ang
             flux = data["flux_emission"].values * 1e-8  # erg/s/cm^2/Ang
-            sort_i = np.argsort(wave)
-            wave = wave[sort_i]
-            flux = flux[sort_i]
+            flux = flux[::-1]
+            if model_wave is None:
+                model_wave = data["wavelength"].values * 1e4  # Ang
+                model_wave = model_wave[::-1]
+                assert np.all(model_wave[1:] >= model_wave[:-1])
+                new_wave = trim_wavelength_coverage(LOWER_RES_WAVE, model_wave)
             arrays = (
-                _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
+                _filter_fluxes(model_wave, flux, filters) * 1e23 * 1e9,  # nJy
                 flambda_to_fnu(
-                    LOWER_RES_WAVE,  # Ang
-                    resample_spectrum(LOWER_RES_WAVE, wave, flux),
+                    new_wave,  # Ang
+                    resample_spectrum(new_wave, model_wave, flux),
                 )
                 * 1e23
                 * 1e9,  # nJy
@@ -266,7 +270,7 @@ def build_sonora_flame_skimmer_quickstart(
         filter_names=filter_names,
         axes=["teff", "logg", "kzz", "mh", "co"],
         model_name="SonoraFlameSkimmerQuickstart",
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 
@@ -317,6 +321,8 @@ def build_sonora_elf_owl(
             "Install with `pip install astro-nifty[build-model]`"
         )
     path = Path(path)
+    model_wave = None
+    new_wave = LOWER_RES_WAVE
     values = []
     for part in path.iterdir():
         if not part.suffixes == [".tar", ".gz"]:
@@ -342,16 +348,22 @@ def build_sonora_elf_owl(
                         all_params["mh"],
                         all_params["cto"],
                     )
-                    wave = data["wavelength"].values * 1e4  # Ang
                     flux = data["flux"].values * 1e-8  # erg/s/cm^2/Ang
-                    sort_i = np.argsort(wave)
-                    wave = wave[sort_i]
-                    flux = flux[sort_i]
+                    flux = flux[::-1]
+                    if model_wave is None:
+                        model_wave = data["wavelength"].values * 1e4  # Ang
+                        model_wave = model_wave[::-1]
+                        assert np.all(model_wave[1:] >= model_wave[:-1])
+                        new_wave = trim_wavelength_coverage(
+                            LOWER_RES_WAVE, model_wave
+                        )
                     arrays = (
-                        _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
+                        _filter_fluxes(model_wave, flux, filters)
+                        * 1e23
+                        * 1e9,  # nJy
                         flambda_to_fnu(
-                            LOWER_RES_WAVE,  # Ang
-                            resample_spectrum(LOWER_RES_WAVE, wave, flux),
+                            new_wave,  # Ang
+                            resample_spectrum(new_wave, model_wave, flux),
                         )
                         * 1e23
                         * 1e9,  # nJy
@@ -362,7 +374,7 @@ def build_sonora_elf_owl(
         filter_names=filter_names,
         axes=["teff", "logg", "kzz", "mh", "co"],
         model_name="SonoraElfOwl",
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 
@@ -422,9 +434,10 @@ def build_sonora_ph3(
     )
     points = tuple(p.astype(np.float32) for p in points)
     # Wavelength from wave number.
-    wave = (1e8 / data["wvno"]).astype(np.float32)  # Ang
-    sort_ind = np.argsort(wave)
-    wave = wave[sort_ind]
+    model_wave = (1e8 / data["wvno"]).astype(np.float32)  # Ang
+    model_wave = model_wave[::-1]  # Reverse to sort by wavelength.
+    assert np.all(model_wave[1:] >= model_wave[:-1])
+    new_wave = trim_wavelength_coverage(LOWER_RES_WAVE, model_wave)
     data.close()
     del data
 
@@ -449,24 +462,24 @@ def build_sonora_ph3(
         # Reshape all but the last dimension to flat for batch indexing.
         flux = flux.reshape((-1, original_shape[-1]))
         phot = np.empty((flux.shape[0], len(filters)), dtype=np.float32)
-        spec = np.empty((flux.shape[0], len(LOWER_RES_WAVE)), dtype=np.float32)
+        spec = np.empty((flux.shape[0], len(new_wave)), dtype=np.float32)
         batch_size = 2000
         for start in tqdm(range(0, flux.shape[0], batch_size), desc="reduce"):
             # Make sure we don't go out of bounds.
             stop = min(start + batch_size, flux.shape[0])
             batch = flux[start:stop].astype(np.float32) * 1e-8  # erg/s/cm^2/Ang
-            batch = batch[..., sort_ind]
+            batch = batch[..., ::-1]
             phot[start:stop] = _filter_fluxes(
-                wave, batch, filters
+                model_wave, batch, filters
             )  # erg/s/cm^2/Hz
             spec[start:stop] = resample_spectrum(
-                LOWER_RES_WAVE, wave, batch
+                new_wave, model_wave, batch
             )  # erg/s/cm^2/Ang
         phot = phot.reshape(original_shape[:-1] + (len(filters),))
-        spec = spec.reshape(original_shape[:-1] + (len(LOWER_RES_WAVE),))
+        spec = spec.reshape(original_shape[:-1] + (len(new_wave),))
         del flux
     phot *= 1e23 * 1e9  # nJy
-    spec = (flambda_to_fnu(LOWER_RES_WAVE, spec) * 1e23 * 1e9).astype(
+    spec = (flambda_to_fnu(new_wave, spec) * 1e23 * 1e9).astype(
         np.float32
     )  # nJy
     return ModelGrid(
@@ -477,7 +490,7 @@ def build_sonora_ph3(
         model_name="SonoraElfOwlPH3",
         fill_method=None,
         filters=tuple(filter_names),
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 
@@ -558,6 +571,8 @@ def build_atmo2020(
 
     path = Path(path)
     values = []
+    model_wave = None
+    new_wave = LOWER_RES_WAVE
     for dir_name in ["grid_m1.0", "grid_m0.5", "grid_p0", "grid_p0.3"]:
         dir = path / dir_name
         glob = list(dir.glob("spec*"))
@@ -566,13 +581,16 @@ def build_atmo2020(
             data = pd.read_csv(
                 file_path, sep=" ", comment="#", header=None, engine="c"
             ).values
-            wave = data[:, 0] * 1e4  # Ang
+            if model_wave is None:
+                model_wave = data[:, 0] * 1e4  # Ang
+                assert np.all(model_wave[1:] >= model_wave[:-1])
+                new_wave = trim_wavelength_coverage(LOWER_RES_WAVE, model_wave)
             flux = data[:, 1] * 1e-1  # erg/s/cm^2/Ang
             arrays = (
-                _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
+                _filter_fluxes(model_wave, flux, filters) * 1e23 * 1e9,  # nJy
                 flambda_to_fnu(
-                    LOWER_RES_WAVE,  # Ang
-                    resample_spectrum(LOWER_RES_WAVE, wave, flux),
+                    new_wave,  # Ang
+                    resample_spectrum(new_wave, model_wave, flux),
                 )
                 * 1e23
                 * 1e9,  # nJy
@@ -587,7 +605,7 @@ def build_atmo2020(
         filter_names=filter_names,
         axes=["teff", "logg", "mh"],
         model_name="ATMO2020",
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 
@@ -641,6 +659,8 @@ def build_lowz(
     index = pd.read_csv(index_path).set_index("FILENAME")
 
     values = []
+    model_wave = None
+    new_wave = LOWER_RES_WAVE
     with (
         ProgressByteReader.open(models_path)
         if progress_bar
@@ -666,13 +686,20 @@ def build_lowz(
                 data = pd.read_csv(
                     stream, sep=" ", comment="#", header=None, engine="c"
                 ).values
-                wave = data[:, 0] * 1e4
+                if model_wave is None:
+                    model_wave = data[:, 0] * 1e4
+                    assert np.all(model_wave[1:] >= model_wave[:-1])
+                    new_wave = trim_wavelength_coverage(
+                        LOWER_RES_WAVE, model_wave
+                    )
                 flux = data[:, 1] * 1e-7  # erg/s/cm^2/Ang
                 arrays = (
-                    _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
+                    _filter_fluxes(model_wave, flux, filters)
+                    * 1e23
+                    * 1e9,  # nJy
                     flambda_to_fnu(
-                        LOWER_RES_WAVE,  # Ang
-                        resample_spectrum(LOWER_RES_WAVE, wave, flux),
+                        new_wave,  # Ang
+                        resample_spectrum(new_wave, model_wave, flux),
                     )
                     * 1e23
                     * 1e9,  # nJy
@@ -683,7 +710,7 @@ def build_lowz(
         filter_names=filter_names,
         axes=["teff", "logg", "kzz", "mh", "co"],
         model_name="LOWZ",
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 
