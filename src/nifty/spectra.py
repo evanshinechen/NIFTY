@@ -3,8 +3,14 @@
 import numpy as np
 import numpy.typing as npt
 from spectres import spectres
+from spectres.spectral_resampling import make_bins
 
-__all__ = ["flambda_to_fnu", "fnu_to_flambda", "resample_spectrum"]
+__all__ = [
+    "flambda_to_fnu",
+    "fnu_to_flambda",
+    "resample_spectrum",
+    "trim_wavelength_coverage",
+]
 
 _C_ANGSTROM_PER_SECOND = 2.99792458e18
 
@@ -88,3 +94,28 @@ def resample_spectrum(
         fill=np.nan,
         verbose=False,
     )
+
+
+def trim_wavelength_coverage(
+    new_wave: npt.ArrayLike, wave: npt.ArrayLike
+) -> npt.NDArray[np.floating]:
+    """Trim a new wavelength grid based on the coverage of another grid.
+
+    Parameters
+    ----------
+    new_wave : ndarray of shape (M,)
+        Target wavelength grid.
+    wave : ndarray of shape (N,)
+        Source wavelength grid.
+
+    Returns
+    -------
+    trimmed_wave : ndarray
+        A copy of new_wave trimmed to the coverage of wave.
+    """
+    wave = np.asarray(wave)
+    new_wave = np.asarray(new_wave)
+    edges, _ = make_bins(wave)
+    new_edges, _ = make_bins(new_wave)
+    # Require all retained new bins to be within the edges of the current wave.
+    return new_wave[(new_edges[:-1] >= edges[0]) & (new_edges[1:] <= edges[-1])]
