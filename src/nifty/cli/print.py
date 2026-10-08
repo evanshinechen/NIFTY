@@ -18,12 +18,15 @@ AXIS_LABEL = {
     "logg": "log(g)",
     "kzz": "kzz",
     "mh": "[M/H]",
+    "fsed": "f_sed",
     "co": "C/O",
 }
 
 # Model key to readable name.
 MODEL_LABEL = {
     "SonoraFlameSkimmerQuickstart": "Sonora Flame Skimmer (Quickstart)",
+    "SonoraDiamondbackCloudy": "Sonora Diamondback (Cloudy)",
+    "SonoraDiamondbackCloudless": "Sonora Diamondback (Cloudless)",
     "SonoraElfOwl": "Sonora Elf Owl",
     "SonoraElfOwlPH3": "Sonora Elf Owl + PH3",
     "ATMO2020": "ATMO2020",

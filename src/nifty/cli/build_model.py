@@ -8,6 +8,8 @@ import numpy as np
 from ..build_model import (
     build_atmo2020,
     build_lowz,
+    build_sonora_diamondback_cloudless,
+    build_sonora_diamondback_cloudy,
     build_sonora_elf_owl,
     build_sonora_flame_skimmer_quickstart,
     build_sonora_ph3,
@@ -18,6 +20,8 @@ from .print import print_banner, print_filters
 
 BUILD_FUNCTION = {
     "SonoraFlameSkimmerQuickstart": build_sonora_flame_skimmer_quickstart,
+    "SonoraDiamondbackCloudy": build_sonora_diamondback_cloudy,
+    "SonoraDiamondbackCloudless": build_sonora_diamondback_cloudless,
     "SonoraElfOwl": build_sonora_elf_owl,
     "SonoraElfOwlPH3": build_sonora_ph3,
     "ATMO2020": build_atmo2020,
@@ -29,13 +33,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="NIFTY ModelGrid builder.")
     parser.add_argument(
         "model",
-        choices=[
-            "SonoraFlameSkimmerQuickstart",
-            "SonoraElfOwl",
-            "SonoraElfOwlPH3",
-            "ATMO2020",
-            "LOWZ",
-        ],
+        choices=list(BUILD_FUNCTION.keys()),
         help="Name of the model to build a grid",
     )
     parser.add_argument(

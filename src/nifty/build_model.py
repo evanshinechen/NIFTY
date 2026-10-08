@@ -2,6 +2,7 @@
 
 import io
 import json
+import re
 import tarfile
 import tempfile
 import zipfile
@@ -22,6 +23,8 @@ from .spectra import flambda_to_fnu, resample_spectrum, trim_wavelength_coverage
 __all__ = [
     "build_atmo2020",
     "build_lowz",
+    "build_sonora_diamondback_cloudless",
+    "build_sonora_diamondback_cloudy",
     "build_sonora_elf_owl",
     "build_sonora_ph3",
 ]
@@ -272,6 +275,156 @@ def build_sonora_flame_skimmer_quickstart(
         axes=["teff", "logg", "kzz", "mh", "co"],
         model_name="SonoraFlameSkimmerQuickstart",
         wave=new_wave,
+    )
+
+
+# ============================================================
+# Model: Sonora Diamondback
+#
+# Expected layout
+# -------------------------
+#   diamondback-spectra.zip
+#       spectra/t1300g3160f1_m0.0_co1.0.spec
+#       spectra/t1600g31nc_m-0.5_co1.0.spec
+#       ...
+#
+# The first three lines are headers. Data columns are wavelength in microns
+# (descending) and flux in W/m^2/m.
+# ============================================================
+_DIAMONDBACK_FILENAME = re.compile(
+    r"t(?P<teff>\d+)g(?P<grav>\d+)(?P<cloud>nc|f\d+)"
+    r"_m(?P<mh>[+-]?\d+(?:\.\d+)?)_co\d+(?:\.\d+)?\.spec"
+)
+
+
+def _build_sonora_diamondback(
+    path: Path | str,
+    *,
+    cloudy: bool,
+    filters: Sequence[Filter],
+    filter_names: Sequence[str],
+    progress_bar: bool,
+) -> ModelGrid:
+    model_wave = None
+    values = []
+    new_wave = LOWER_RES_WAVE
+    with zipfile.ZipFile(path) as archive:
+        members = [
+            (name, match)
+            for name in archive.namelist()
+            if Path(name).parent == Path("spectra")
+            and (match := _DIAMONDBACK_FILENAME.fullmatch(Path(name).name))
+            and (match.group("cloud") != "nc") == cloudy
+        ]
+        for name, match in tqdm(members, disable=not progress_bar):
+            with archive.open(name) as spectrum:
+                data = np.loadtxt(
+                    spectrum, skiprows=3, usecols=(0, 1), dtype=np.float32
+                )
+            if model_wave is None:
+                model_wave = data[:, 0] * 1e4  # Ang
+                model_wave = model_wave[::-1]
+                assert np.all(model_wave[1:] >= model_wave[:-1])
+                new_wave = trim_wavelength_coverage(LOWER_RES_WAVE, model_wave)
+            flux = data[:, 1] * 1e-7  # erg/s/cm^2/Ang
+            flux = flux[::-1]
+            params = (
+                np.log10(float(match.group("teff"))),
+                round(np.log10(float(match.group("grav"))) + 2, 1),  # cgs
+                float(match.group("mh")),
+            )
+            if cloudy:
+                params += (float(match.group("cloud")[1:]),)
+            arrays = (
+                _filter_fluxes(model_wave, flux, filters) * 1e23 * 1e9,  # nJy
+                flambda_to_fnu(
+                    new_wave,
+                    resample_spectrum(new_wave, model_wave, flux),
+                )
+                * 1e23
+                * 1e9,  # nJy
+            )
+            values.append((params, arrays))
+    return _build_from_values(
+        values,
+        filter_names=filter_names,
+        axes=["teff", "logg", "mh", "fsed"]
+        if cloudy
+        else ["teff", "logg", "mh"],
+        model_name=(
+            "SonoraDiamondbackCloudy"
+            if cloudy
+            else "SonoraDiamondbackCloudless"
+        ),
+        wave=new_wave,
+    )
+
+
+def build_sonora_diamondback_cloudy(
+    path: Path | str,
+    *,
+    filters: Sequence[Filter],
+    filter_names: Sequence[str],
+    progress_bar: bool = True,
+) -> ModelGrid:
+    """Build the raw cloudy Sonora Diamondback ModelGrid.
+
+    Parameters
+    ----------
+    path : Path or str
+        Path to Sonora Diamondback spectra ZIP file.
+    filters : sequence of sedpy.observate.Filter
+        Photometric filters.
+    filter_names : sequence of str
+        Names of photometric filters to store as metadata.
+    progress_bar : bool, default=True
+        Display a progress bar while loading the model.
+
+    Returns
+    -------
+    model_grid : ModelGrid
+        Cloudy Sonora Diamondback ModelGrid object.
+    """
+    return _build_sonora_diamondback(
+        path,
+        cloudy=True,
+        filters=filters,
+        filter_names=filter_names,
+        progress_bar=progress_bar,
+    )
+
+
+def build_sonora_diamondback_cloudless(
+    path: Path | str,
+    *,
+    filters: Sequence[Filter],
+    filter_names: Sequence[str],
+    progress_bar: bool = True,
+) -> ModelGrid:
+    """Build the raw cloudless Sonora Diamondback ModelGrid.
+
+    Parameters
+    ----------
+    path : Path or str
+        Path to Sonora Diamondback spectra ZIP file.
+    filters : sequence of sedpy.observate.Filter
+        Photometric filters.
+    filter_names : sequence of str
+        Names of photometric filters to store as metadata.
+    progress_bar : bool, default=True
+        Display a progress bar while loading the model.
+
+    Returns
+    -------
+    model_grid : ModelGrid
+        Cloudless Sonora Diamondback ModelGrid object.
+    """
+    return _build_sonora_diamondback(
+        path,
+        cloudy=False,
+        filters=filters,
+        filter_names=filter_names,
+        progress_bar=progress_bar,
     )
 
 
