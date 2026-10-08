@@ -10,6 +10,7 @@ __all__ = [
     "fnu_to_flambda",
     "resample_spectrum",
     "trim_wavelength_coverage",
+    "trim_wavelength_coverage_mask",
 ]
 
 _C_ANGSTROM_PER_SECOND = 2.99792458e18
@@ -96,6 +97,32 @@ def resample_spectrum(
     )
 
 
+def trim_wavelength_coverage_mask(
+    new_wave: npt.ArrayLike, wave: npt.ArrayLike
+) -> npt.NDArray[np.bool_]:
+    """Select target wavelength bins fully covered by a source wavelength grid.
+
+    Both grids use bin edges halfway between adjacent wavelength samples.
+
+    Parameters
+    ----------
+    new_wave : ndarray of shape (M,)
+        Target wavelength grid.
+    wave : ndarray of shape (N,)
+        Source wavelength grid.
+
+    Returns
+    -------
+    mask : ndarray of bool of shape (M,)
+        True where the entire target bin is within the source bin edges.
+    """
+    wave = np.asarray(wave)
+    new_wave = np.asarray(new_wave)
+    edges, _ = make_bins(wave)
+    new_edges, _ = make_bins(new_wave)
+    return (new_edges[:-1] >= edges[0]) & (new_edges[1:] <= edges[-1])
+
+
 def trim_wavelength_coverage(
     new_wave: npt.ArrayLike, wave: npt.ArrayLike
 ) -> npt.NDArray[np.floating]:
@@ -113,9 +140,5 @@ def trim_wavelength_coverage(
     trimmed_wave : ndarray
         A copy of new_wave trimmed to the coverage of wave.
     """
-    wave = np.asarray(wave)
     new_wave = np.asarray(new_wave)
-    edges, _ = make_bins(wave)
-    new_edges, _ = make_bins(new_wave)
-    # Require all retained new bins to be within the edges of the current wave.
-    return new_wave[(new_edges[:-1] >= edges[0]) & (new_edges[1:] <= edges[-1])]
+    return new_wave[trim_wavelength_coverage_mask(new_wave, wave)]

@@ -21,8 +21,9 @@ from ..load import (
 )
 from ..model import Model, ModelGrid, linear_teff
 from ..plot import plot_corner, plot_photometry, plot_spectrum
-from ..prob import BayesianProbability
+from ..prob import BayesianProbability, valid_observation_mask
 from ..sample import sample_mcmc, sample_nautilus
+from ..spectra import trim_wavelength_coverage_mask
 from .print import (
     print_banner,
     print_filters,
@@ -310,8 +311,14 @@ def main():
         objects = [obj for obj in zip(ids, flux, error)]
     elif args.mode == "spec":
         wave, flux, error = load_spec_text(args.spectrum)
-        model = Model.spec(model_grid, wave)
-        objects = [(args.obj_id, flux, error)]
+        coverage_mask = trim_wavelength_coverage_mask(wave, model_grid.wave)
+        if not np.any(coverage_mask):
+            raise ValueError(
+                "Spectrum has no wavelength bins within model coverage."
+            )
+        fit_wave = wave[coverage_mask]
+        model = Model.spec(model_grid, wave, fit_mask=coverage_mask)
+        objects = [(args.obj_id, flux[coverage_mask], error[coverage_mask])]
 
     # We have to create a new model for spectroscopy, since NIFTY uses the
     # original model grid's wavelength for its SED.
@@ -355,6 +362,11 @@ def main():
                     f"{filter_names[changed_index]} to minimum relative error."
                 )
             print_separator(indent=4)
+        valid_flux = valid_observation_mask(obs_flux, obs_error)
+        if not np.any(valid_flux):
+            raise ValueError(
+                f"Object {obj_id} has no valid flux and error pairs."
+            )
         print("    Assuming source is at 1 Jupiter radius.")
         print_separator(indent=4)
 
@@ -394,14 +406,11 @@ def main():
         print_separator(indent=4)
 
         # Compute chi-square reduced.
-        valid_flux = ~np.isnan(obs_flux) & (obs_error > 0)
-        chi_sq_model = np.sum(
-            np.square(
-                (obs_flux[valid_flux] - model_median[valid_flux])
-                / obs_error[valid_flux]
-            )
-        )
+        fit_residual = (
+            obs_flux[valid_flux] - model_median[valid_flux]
+        ) / obs_error[valid_flux]
         num_data_points = np.count_nonzero(valid_flux)
+        chi_sq_model = np.sum(np.square(fit_residual))
         num_free_params = model.n_params
         degrees_of_freedom = num_data_points - num_free_params
         if degrees_of_freedom > 0:
@@ -435,9 +444,9 @@ def main():
             plot_spectrum(
                 ax,
                 wave=wave,
-                obj_flux=obs_flux,
-                obj_error=obs_error,
-                valid_flux=valid_flux,
+                obj_flux=flux,
+                obj_error=error,
+                valid_flux=np.isfinite(flux),
                 obj_id=obj_id,
                 model_wave=model_grid.wave,
                 model_flux=spec_model_median,
@@ -508,7 +517,7 @@ def main():
                     (
                         filter_central_wavelength
                         if args.mode == "phot"
-                        else wave / 1e4
+                        else fit_wave / 1e4
                     ),
                     model_median,
                 )

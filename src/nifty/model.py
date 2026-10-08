@@ -305,6 +305,8 @@ class Model:
         cls,
         model_grid: ModelGrid,
         wave: npt.NDArray[np.float32] | None = None,
+        *,
+        fit_mask: npt.NDArray[np.bool_] | None = None,
     ) -> Self:
         """
         Create a Model from the spectroscopy data in a ModelGrid.
@@ -318,6 +320,9 @@ class Model:
         wave : ndarray of shape (W,), optional
             Target wavelength grid in Angstroms. If not provided, use the
             wavelength grid from model_grid.
+        fit_mask : ndarray of bool of shape (W,), optional
+            Select wavelength bins for the fitted model after resampling onto
+            the complete target wavelength grid.
 
         Returns
         -------
@@ -330,6 +335,8 @@ class Model:
             )
         else:
             values = model_grid.spec
+        if fit_mask is not None:
+            values = values[..., fit_mask]
         interp = RegularGridInterpolator(
             model_grid.points,
             values,

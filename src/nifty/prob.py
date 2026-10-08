@@ -8,6 +8,26 @@ from .model import Model
 __all__ = ["BayesianProbability"]
 
 
+def valid_observation_mask(
+    obs_flux: npt.NDArray[np.float32], obs_error: npt.NDArray[np.float32]
+) -> npt.NDArray[np.bool_]:
+    """Select observations with finite flux and finite, positive error.
+
+    Parameters
+    ----------
+    obs_flux : ndarray
+        Observed flux.
+    obs_error : ndarray
+        Observed error.
+
+    Returns
+    -------
+    mask : ndarray
+        Mask of all points with finite flux and finite, positive error.
+    """
+    return np.isfinite(obs_flux) & np.isfinite(obs_error) & (obs_error > 0)
+
+
 class BayesianProbability:
     """
     Bayesian probabilities of parameters using a model and observed data.
@@ -152,17 +172,15 @@ class BayesianProbability:
         log_likelihood : ndarray of shape (...,)
             Log likelihood for the given parameters and observation.
         """
-        valid = (~np.isnan(obs_flux)) & (obs_error > 0)
-        model_flux = self.model(theta)
-        variance = np.square(obs_error) + np.square(
+        valid = valid_observation_mask(obs_flux, obs_error)
+        model_flux = self.model(theta)[..., valid]
+        valid_error = obs_error[valid]
+        variance = np.square(valid_error) + np.square(
             self.frac_model_floor * model_flux
         )
         log_likelihood = -0.5 * np.sum(
-            np.where(
-                valid,
-                np.square(obs_flux - model_flux) / variance + np.log(variance),
-                0.0,
-            ),
+            np.square(obs_flux[valid] - model_flux) / variance
+            + np.log(variance),
             axis=-1,
         )
         return np.where(np.isfinite(log_likelihood), log_likelihood, -np.inf)
