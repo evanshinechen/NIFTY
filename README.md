@@ -6,13 +6,20 @@
 *Kevin Hainline, Jake Helton, and Evan Chen*
 
 NIFTY is a code designed to fit JWST NIRCam/MIRI photometry or NIRSpec prism 
-spectroscopy of cold brown dwarf candidates with the LOWZ (Meisner et al. 2021), 
-ATMO2020 (Phillips et al. 2020), Sonora Flame Skimmer (Mang et al. 2026), 
-Sonora Elf Owl v2 (Mukherjee et al. 2024, Wogan et al. 2025), or earlier Sonora Elf 
-Owl (with PH3, Beiler et al. 2024) atmospheric models, using a Bayesian framework 
-with the emcee sampler (https://emcee.readthedocs.io/en/stable/user/sampler/) 
-or the Nautilus sampler (https://nautilus-sampler.readthedocs.io/en/latest/). 
-This code was described in Hainline et al. (2026) (doi.org/10.48550/arXiv.2510.00111).
+spectroscopy of cold brown dwarf candidates with atmospheric models, using a 
+Bayesian framework with the emcee sampler 
+(https://emcee.readthedocs.io/en/stable/user/sampler/) or the Nautilus sampler
+(https://nautilus-sampler.readthedocs.io/en/latest/). 
+This code was described in Hainline et al. (2026)
+(https://doi.org/10.48550/arXiv.2510.00111).
+
+The following atmospheric models are supported: 
+- LOWZ (Meisner et al. 2021)
+- ATMO2020++ (Meisner et al. 2023)
+- Sonora Elf Owl v2 (Mukherjee et al. 2024, Wogan et al. 2025)
+- Sonora Elf Owl with PH3 (Beiler et al. 2024)
+- Sonora Diamondback (Cloudy and Cloudless) (Morley et al. 2024)
+- Sonora Flame Skimmer (Mang et al. 2026)
 
 NIFTY operates in two modes:
 
@@ -129,12 +136,12 @@ photometry fitting. Here is a sample entry:
     "JWST_F115W": {
       "extension": "CIRC",
       "flux": "F115W_CIRC3",
-      "error": "F115W_CIRC3_e",
+      "error": "F115W_CIRC3_e"
     },
     "JWST_F444W": {
       "extension": "CIRC",
       "flux": "F444W_CIRC3",
-      "error": "F444W_CIRC3_e",
+      "error": "F444W_CIRC3_e"
     }
   }
 }
@@ -167,7 +174,7 @@ ID     F115W_CIRC3     F115W_CIRC3_e     F444W_CIRC3     F444W_CIRC3_e
 ```
 
 All fluxes and errors should be in nJy. A minimum relative flux error of 5% is 
-applied automatically; errors below this floor are inflated to `0.05 * flux`.
+applied automatically; errors below this floor are inflated to `0.05 * abs(flux)`.
 
 ## Output Files
 
@@ -187,11 +194,13 @@ Each file name is prefixed with `<stub>_<ID>_<Model>_`.
 
 | Model | Parameters fit |
 |---|---|
-| `SonoraFlameSkimmerQuickstart` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
+| `LOWZ` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
+| `ATMO2020` | Teff, log(g), [M/H], distance (pc) |
 | `SonoraElfOwl` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
 | `SonoraElfOwlPH3` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
-| `ATMO2020` | Teff, log(g), [M/H], distance (pc) |
-| `LOWZ` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
+| `SonoraDiamondbackCloudy` | Teff, log(g), [M/H], f_sed, distance (pc) |
+| `SonoraDiamondbackCloudless` | Teff, log(g), [M/H], distance (pc) |
+| `SonoraFlameSkimmerQuickstart` | Teff, log(g), log(Kzz), [M/H], C/O, distance (pc) |
 
 All fits assume a source radius of 1 Jupiter radius. Distances are always
 reported in parsecs.
@@ -205,8 +214,9 @@ fits at this link:
 [https://arizona.box.com/v/NiftyModelGrids](https://arizona.box.com/v/NiftyModelGrids)
 
 These files range in size from 2 - 300 MB, and you can point NIFTY at these to run
-fits. They include all of the JWST NIRCam and MIRI filters, as well as the Roman WFI
-filters for use with future Roman HLWAS observations. 
+fits. They include all applicable JWST NIRCam and MIRI filters, as well as the 
+Roman WFI filters for use with future Roman HLWAS observations. Some filters are 
+not included because they are not within the model's wavelength range.
 
 
 ## Creating the ModelGrid Files
@@ -223,14 +233,14 @@ build_model \
     ModelName
 ```
 
-The valid model names are `SonoraFlameSkimmerQuickstart`, `SonoraElfOwl`, 
-`SonoraElfOwlPH3`, `ATMO2020`, `LOWZ`. At this time, NIFTY does not support
-creating the SonoraFlameSkimmer complete models from scratch.
+The valid model names are the same as the names in the table above. At this 
+time, NIFTY does not support creating the SonoraFlameSkimmer complete models 
+from scratch.
 
-Typically, there are two ModelGrid files outputted. The **raw grid** is the 
+Typically, two ModelGrid files are produced. The **raw grid** is the
 grid created by reading in all the points that are part of the model. However, 
-many models do not have values at all grid points, so missing points are filled. 
-with NaN. The **complete grid** has  values for all grid points. If the raw 
+many models do not have values at all grid points, so missing points are filled 
+with NaN. The **complete grid** has values for all grid points. If the raw
 grid is missing values, they are filled by a fitting procedure (see code for 
 details). If the raw grid is already complete, only the complete grid is saved.
 
@@ -245,6 +255,11 @@ to process. The other grids are considerably smaller.
 **SonoraFlameSkimmerQuickstart** — A single zip file:
 ```
 spectra_R3k_quickstart.zip
+```
+
+**SonoraDiamondbackCloudy** and **SonoraDiamondbackCloudless** — A single zip file:
+```
+spectra.zip
 ```
 
 **SonoraElfOwl** — directory of temperature-range tarballs containing NetCDF 
@@ -282,10 +297,11 @@ LOWZ/
 ## References
 
 - Meisner et al. 2021 (LOWZ): https://doi.org/10.3847/1538-4357/ac013c
-- Phillips et al. 2020 (ATMO2020): https://doi.org/10.1051/0004-6361/201937381 
+- Meisner et al. 2023 (ATMO2020++): https://doi.org/10.3847/1538-3881/acdb68
 - Mukherjee et al. 2024 (Sonora Elf Owl): https://doi.org/10.3847/1538-4357/ad18c2
 - Wogan et al. 2025 (Sonora Elf Owl v2): https://doi.org/10.3847/2515-5172/add407
-- Beiler et al. 2024: https://doi.org/10.5281/zenodo.11370829
+- Morley et al. 2024 (Sonora Diamondback): https://doi.org/10.48550/arXiv.2402.00758
+- Beiler et al. 2024: https://doi.org/10.3847/1538-4357/ad6759
 - Foreman-Mackey et al. 2013 (emcee): https://doi.org/10.1086/670067
 - Lange 2023 (nautilus): https://doi.org/10.1093/mnras/stad2441
 - Mang et al. 2026 (Sonora Flame Skimmer): https://doi.org/10.48550/arXiv.2608.06454
