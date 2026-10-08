@@ -83,6 +83,8 @@ class PosteriorSamples:
         self,
         model: Model,
         q: float | Sequence[float] | npt.NDArray[np.float32],
+        *,
+        chunk_size: int | None = None,
     ) -> npt.NDArray[np.float32]:
         """Quantiles of model values at sampled parameters.
 
@@ -90,6 +92,9 @@ class PosteriorSamples:
             Quantiles to compute. Values must be between 0 and 1 inclusive.
         model : Model
             Model used for forward modeling parameters.
+        chunk_size : int, optional
+            Maximum number of model output bins evaluated at once. If omitted,
+            all bins are evaluated together.
 
         Returns
         -------
@@ -101,18 +106,35 @@ class PosteriorSamples:
 
         Notes
         -----
-        Quantiles are comptued using "inverted_cdf" in `numpy.quantile`.
+        Quantiles are computed using "inverted_cdf" in `numpy.quantile`.
         This supports both equal-weight and weighted samples. For a large number
         of samples, the difference between "inverted_cdf" and the default
         "linear" method is negligible.
         """
-        return np.quantile(
-            model(self.samples),
-            q,
-            axis=0,
-            weights=self.weights,
-            method="inverted_cdf",
-        ).astype(np.float32)
+        n_outputs = model.interp.values.shape[-1]
+
+        def quantile(m):
+            return np.quantile(
+                m(self.samples),
+                q,
+                axis=0,
+                weights=self.weights,
+                method="inverted_cdf",
+            ).astype(np.float32)
+
+        if chunk_size is None or chunk_size >= n_outputs:
+            return quantile(model)
+        return np.concatenate(
+            [
+                quantile(
+                    model._slice_outputs(
+                        start, min(start + chunk_size, n_outputs)
+                    )
+                )
+                for start in range(0, n_outputs, chunk_size)
+            ],
+            axis=-1,
+        )
 
 
 def sample_mcmc(

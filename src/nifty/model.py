@@ -372,6 +372,17 @@ class Model:
         ]
         return model_flux
 
+    def _slice_outputs(self, start: int, stop: int) -> Self:
+        """Return a model over a view of the selected output bins."""
+        interp = RegularGridInterpolator(
+            self.interp.grid,
+            self.interp.values[..., start:stop],
+            method=self.interp.method,
+            bounds_error=self.interp.bounds_error,
+            fill_value=self.interp.fill_value,
+        )
+        return self.__class__(interp, self.axes_map)
+
 
 def _resample_model_spectrum(
     new_wave: npt.NDArray[np.float32],

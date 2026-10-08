@@ -22,7 +22,7 @@ from ..load import (
 from ..model import Model, ModelGrid, linear_teff
 from ..plot import plot_corner, plot_photometry, plot_spectrum
 from ..prob import BayesianProbability, valid_observation_mask
-from ..sample import sample_mcmc, sample_nautilus
+from ..sample import PosteriorSamples, sample_mcmc, sample_nautilus
 from ..spectra import trim_wavelength_coverage_mask
 from .print import (
     print_banner,
@@ -62,6 +62,12 @@ def _min_rel_error(flux, error, min_rel_error=0.05):
     clipped_error = np.where(error < 0, error, clipped_error)
     changed = np.nonzero((error < min_error) & (error >= 0))[0]
     return clipped_error, changed
+
+
+def _model_quantile_chunk_size(samples: PosteriorSamples, model: Model) -> int:
+    """Choose output bins per chunk to retain roughly 10^7 elements at once."""
+    chunk_size = 10_000_000 // samples.samples.shape[0]
+    return min(max(chunk_size, 1), model.interp.values.shape[-1])
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -400,9 +406,15 @@ def main():
         # Build model percentile envelopes.
         print("    Getting median/upper/lower limits from the spectrum")
         spec_model_lower, spec_model_median, spec_model_upper = (
-            samples.model_quantile(spec_model, [0.16, 0.5, 0.84])
+            samples.model_quantile(
+                spec_model,
+                [0.16, 0.5, 0.84],
+                chunk_size=_model_quantile_chunk_size(samples, spec_model),
+            )
         )
-        model_median = samples.model_quantile(model, 0.5)
+        model_median = samples.model_quantile(
+            model, 0.5, chunk_size=_model_quantile_chunk_size(samples, model)
+        )
         print_separator(indent=4)
 
         # Compute chi-square reduced.
