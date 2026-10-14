@@ -463,7 +463,7 @@ def fill_point(
             raise ValueError(
                 "Unable to construct hypercube: "
                 "all axes must have a length of at least 3. "
-                f"Recieved axis lengths {values.shape[:-1]}."
+                f"Received axis lengths {values.shape[:-1]}."
             )
         start = coord - 1
         # Shift the hypercube if it goes out of bounds.

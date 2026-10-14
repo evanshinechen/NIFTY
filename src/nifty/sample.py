@@ -66,7 +66,7 @@ class PosteriorSamples:
 
         Notes
         -----
-        Quantiles are comptued using "inverted_cdf" in `numpy.quantile`.
+        Quantiles are computed using "inverted_cdf" in `numpy.quantile`.
         This supports both equal-weight and weighted samples. For a large number
         of samples, the difference between "inverted_cdf" and the default
         "linear" method is negligible.
