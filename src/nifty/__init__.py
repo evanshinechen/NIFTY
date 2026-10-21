@@ -1,6 +1,6 @@
 """Near-Infrared Fitting for T and Y Dwarfs."""
 
-from . import cli, load, model, plot, prob, sample
+from . import cli, load, model, plot, prob, sample, spectra
 from .model import IndexMap, Model, ModelGrid, linear_teff
 from .prob import BayesianProbability
 from .sample import PosteriorSamples, sample_mcmc, sample_nautilus
@@ -25,4 +25,5 @@ __all__ = [
     "sample",
     "sample_mcmc",
     "sample_nautilus",
+    "spectra",
 ]

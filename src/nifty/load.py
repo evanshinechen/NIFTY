@@ -135,7 +135,7 @@ def load_spec_text(
     """Read a spectrum text file.
 
     The text file must be formatted with three whitespace-delimited columns:
-    wavelength in Angstroms, flux in nJy, and flux error in nJy.
+    wavelength in microns, flux in nJy, and flux error in nJy.
 
     Parameters
     ----------
@@ -145,7 +145,7 @@ def load_spec_text(
     Returns
     -------
     wave : ndarray
-        Wavelength in Angstroms.
+        Wavelength in microns.
     flux : ndarray
         Flux in nJy.
     error : ndarray

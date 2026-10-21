@@ -2,6 +2,7 @@
 
 import io
 import json
+import re
 import tarfile
 import tempfile
 import zipfile
@@ -12,16 +13,18 @@ from typing import Protocol, Self
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from scipy.interpolate import interp1d
 from sedpy.observate import Filter
 from tqdm import tqdm
 
 from .load import load_filter_info
 from .model import ModelGrid
+from .spectra import flambda_to_fnu, resample_spectrum, trim_wavelength_coverage
 
 __all__ = [
     "build_atmo2020",
     "build_lowz",
+    "build_sonora_diamondback_cloudless",
+    "build_sonora_diamondback_cloudy",
     "build_sonora_elf_owl",
     "build_sonora_ph3",
 ]
@@ -119,28 +122,6 @@ def _ab_mag_to_fnu_cgs(
     return 10.0 ** ((ab_mag + 48.60) / -2.5)
 
 
-def _flambda_to_fnu(
-    wave: npt.NDArray[np.float32], flux: npt.NDArray[np.float32]
-) -> npt.NDArray[np.float32]:
-    """
-    Convert flux in f_lambda to f_nu.
-
-    Parameters
-    ----------
-    wave : ndarray
-        Wavelength in Angstroms.
-    flux : ndarray
-        f_lambda in erg/s/cm^2/Ang in the same order as wave.
-
-    Returns
-    -------
-    flux_fnu : ndarray
-        Flux in f_nu in units erg/s/cm^2/Hz.
-    """
-    c = 2.998e18
-    return flux * np.square(wave) / c
-
-
 def load_filters(path: str | Path) -> tuple[list[Filter], list[str]]:
     """
     Load filters from the NIFTY JSON config file.
@@ -186,34 +167,6 @@ def _filter_fluxes(
     for i, f in enumerate(filters):
         fluxes[..., i] = _ab_mag_to_fnu_cgs(f.ab_mag(wave, flux))
     return fluxes
-
-
-def _resample_spectrum(
-    wave: npt.NDArray[np.float32], flux: npt.NDArray[np.float32]
-) -> npt.NDArray[np.float32]:
-    """
-    Resample a model spectrum onto LOWER_RES_WAVE using linear interpolation.
-
-    Parameters
-    ----------
-    wave : ndarray of shape (W,)
-        Wavelength in Angstroms. Must be monotonically increasing.
-    flux : ndarray of shape (..., W)
-        f_lambda in erg/s/cm^2/Ang in the same order as wave.
-
-    Returns
-    -------
-    resampled : ndarray of shape (..., len(LOWER_RES_WAVE))
-        Resampled wave in erg/s/cm^2/Ang.
-
-    Notes
-    -----
-    Linear interpolation is used for speed. For a pre-built interpolator grid
-    evaluated at lower resolution, the difference in flux conservation is
-    negligible compared with the grid interpolation error itself.
-    """
-    interp = interp1d(wave, flux, axis=-1, fill_value="extrapolate")
-    return interp(LOWER_RES_WAVE)
 
 
 # ============================================================
@@ -271,6 +224,8 @@ def build_sonora_flame_skimmer_quickstart(
             "Install with `pip install astro-nifty[build-model]`"
         )
     values = []
+    model_wave = None
+    new_wave = LOWER_RES_WAVE
     with zipfile.ZipFile(path) as zip_ref:
         with zip_ref.open("R3000_starter_spectra_manifest.csv") as f:
             index = pd.read_csv(f)
@@ -294,18 +249,21 @@ def build_sonora_flame_skimmer_quickstart(
                 np.log10(params[1]) + 2.0,  # cgs
                 params[2],
                 params[3],
-                params[4],
+                # Normalize to absolute C/O based on Flame Skimmer's solar C/O.
+                params[4] * 0.458,
             )
-            wave = data["wavelength"].values * 1e4  # Ang
             flux = data["flux_emission"].values * 1e-8  # erg/s/cm^2/Ang
-            sort_i = np.argsort(wave)
-            wave = wave[sort_i]
-            flux = flux[sort_i]
+            flux = flux[::-1]
+            if model_wave is None:
+                model_wave = data["wavelength"].values * 1e4  # Ang
+                model_wave = model_wave[::-1]
+                assert np.all(model_wave[1:] >= model_wave[:-1])
+                new_wave = trim_wavelength_coverage(LOWER_RES_WAVE, model_wave)
             arrays = (
-                _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
-                _flambda_to_fnu(
-                    LOWER_RES_WAVE,  # Ang
-                    _resample_spectrum(wave, flux),  # erg/s/cm^2/Ang
+                _filter_fluxes(model_wave, flux, filters) * 1e23 * 1e9,  # nJy
+                flambda_to_fnu(
+                    new_wave,  # Ang
+                    resample_spectrum(new_wave, model_wave, flux),
                 )
                 * 1e23
                 * 1e9,  # nJy
@@ -316,7 +274,157 @@ def build_sonora_flame_skimmer_quickstart(
         filter_names=filter_names,
         axes=["teff", "logg", "kzz", "mh", "co"],
         model_name="SonoraFlameSkimmerQuickstart",
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
+    )
+
+
+# ============================================================
+# Model: Sonora Diamondback
+#
+# Expected layout
+# -------------------------
+#   diamondback-spectra.zip
+#       spectra/t1300g3160f1_m0.0_co1.0.spec
+#       spectra/t1600g31nc_m-0.5_co1.0.spec
+#       ...
+#
+# The first three lines are headers. Data columns are wavelength in microns
+# (descending) and flux in W/m^2/m.
+# ============================================================
+_DIAMONDBACK_FILENAME = re.compile(
+    r"t(?P<teff>\d+)g(?P<grav>\d+)(?P<cloud>nc|f\d+)"
+    r"_m(?P<mh>[+-]?\d+(?:\.\d+)?)_co\d+(?:\.\d+)?\.spec"
+)
+
+
+def _build_sonora_diamondback(
+    path: Path | str,
+    *,
+    cloudy: bool,
+    filters: Sequence[Filter],
+    filter_names: Sequence[str],
+    progress_bar: bool,
+) -> ModelGrid:
+    model_wave = None
+    values = []
+    new_wave = LOWER_RES_WAVE
+    with zipfile.ZipFile(path) as archive:
+        members = [
+            (name, match)
+            for name in archive.namelist()
+            if Path(name).parent == Path("spectra")
+            and (match := _DIAMONDBACK_FILENAME.fullmatch(Path(name).name))
+            and (match.group("cloud") != "nc") == cloudy
+        ]
+        for name, match in tqdm(members, disable=not progress_bar):
+            with archive.open(name) as spectrum:
+                data = np.loadtxt(
+                    spectrum, skiprows=3, usecols=(0, 1), dtype=np.float32
+                )
+            if model_wave is None:
+                model_wave = data[:, 0] * 1e4  # Ang
+                model_wave = model_wave[::-1]
+                assert np.all(model_wave[1:] >= model_wave[:-1])
+                new_wave = trim_wavelength_coverage(LOWER_RES_WAVE, model_wave)
+            flux = data[:, 1] * 1e-7  # erg/s/cm^2/Ang
+            flux = flux[::-1]
+            params = (
+                np.log10(float(match.group("teff"))),
+                round(np.log10(float(match.group("grav"))) + 2, 1),  # cgs
+                float(match.group("mh")),
+            )
+            if cloudy:
+                params += (float(match.group("cloud")[1:]),)
+            arrays = (
+                _filter_fluxes(model_wave, flux, filters) * 1e23 * 1e9,  # nJy
+                flambda_to_fnu(
+                    new_wave,
+                    resample_spectrum(new_wave, model_wave, flux),
+                )
+                * 1e23
+                * 1e9,  # nJy
+            )
+            values.append((params, arrays))
+    return _build_from_values(
+        values,
+        filter_names=filter_names,
+        axes=["teff", "logg", "mh", "fsed"]
+        if cloudy
+        else ["teff", "logg", "mh"],
+        model_name=(
+            "SonoraDiamondbackCloudy"
+            if cloudy
+            else "SonoraDiamondbackCloudless"
+        ),
+        wave=new_wave,
+    )
+
+
+def build_sonora_diamondback_cloudy(
+    path: Path | str,
+    *,
+    filters: Sequence[Filter],
+    filter_names: Sequence[str],
+    progress_bar: bool = True,
+) -> ModelGrid:
+    """Build the raw cloudy Sonora Diamondback ModelGrid.
+
+    Parameters
+    ----------
+    path : Path or str
+        Path to Sonora Diamondback spectra ZIP file.
+    filters : sequence of sedpy.observate.Filter
+        Photometric filters.
+    filter_names : sequence of str
+        Names of photometric filters to store as metadata.
+    progress_bar : bool, default=True
+        Display a progress bar while loading the model.
+
+    Returns
+    -------
+    model_grid : ModelGrid
+        Cloudy Sonora Diamondback ModelGrid object.
+    """
+    return _build_sonora_diamondback(
+        path,
+        cloudy=True,
+        filters=filters,
+        filter_names=filter_names,
+        progress_bar=progress_bar,
+    )
+
+
+def build_sonora_diamondback_cloudless(
+    path: Path | str,
+    *,
+    filters: Sequence[Filter],
+    filter_names: Sequence[str],
+    progress_bar: bool = True,
+) -> ModelGrid:
+    """Build the raw cloudless Sonora Diamondback ModelGrid.
+
+    Parameters
+    ----------
+    path : Path or str
+        Path to Sonora Diamondback spectra ZIP file.
+    filters : sequence of sedpy.observate.Filter
+        Photometric filters.
+    filter_names : sequence of str
+        Names of photometric filters to store as metadata.
+    progress_bar : bool, default=True
+        Display a progress bar while loading the model.
+
+    Returns
+    -------
+    model_grid : ModelGrid
+        Cloudless Sonora Diamondback ModelGrid object.
+    """
+    return _build_sonora_diamondback(
+        path,
+        cloudy=False,
+        filters=filters,
+        filter_names=filter_names,
+        progress_bar=progress_bar,
     )
 
 
@@ -367,6 +475,8 @@ def build_sonora_elf_owl(
             "Install with `pip install astro-nifty[build-model]`"
         )
     path = Path(path)
+    model_wave = None
+    new_wave = LOWER_RES_WAVE
     values = []
     for part in path.iterdir():
         if not part.suffixes == [".tar", ".gz"]:
@@ -390,18 +500,25 @@ def build_sonora_elf_owl(
                         np.log10(all_params["logg"]["value"]) + 2.0,  # cgs
                         all_params["logkzz"],
                         all_params["mh"],
-                        all_params["cto"],
+                        # Normalize to absolute C/O based on Elf Owl's solar C/O.
+                        all_params["cto"] * 0.458,
                     )
-                    wave = data["wavelength"].values * 1e4  # Ang
                     flux = data["flux"].values * 1e-8  # erg/s/cm^2/Ang
-                    sort_i = np.argsort(wave)
-                    wave = wave[sort_i]
-                    flux = flux[sort_i]
+                    flux = flux[::-1]
+                    if model_wave is None:
+                        model_wave = data["wavelength"].values * 1e4  # Ang
+                        model_wave = model_wave[::-1]
+                        assert np.all(model_wave[1:] >= model_wave[:-1])
+                        new_wave = trim_wavelength_coverage(
+                            LOWER_RES_WAVE, model_wave
+                        )
                     arrays = (
-                        _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
-                        _flambda_to_fnu(
-                            LOWER_RES_WAVE,  # Ang
-                            _resample_spectrum(wave, flux),  # erg/s/cm^2/Ang
+                        _filter_fluxes(model_wave, flux, filters)
+                        * 1e23
+                        * 1e9,  # nJy
+                        flambda_to_fnu(
+                            new_wave,  # Ang
+                            resample_spectrum(new_wave, model_wave, flux),
                         )
                         * 1e23
                         * 1e9,  # nJy
@@ -412,7 +529,7 @@ def build_sonora_elf_owl(
         filter_names=filter_names,
         axes=["teff", "logg", "kzz", "mh", "co"],
         model_name="SonoraElfOwl",
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 
@@ -468,13 +585,15 @@ def build_sonora_ph3(
         np.log10(data["logg"]) + 2,  # cm/s^2
         data["logkzz"],
         data["logmh"],
-        data["cto"],
+        # Normalize to absolute C/O based on Elf Owl's solar C/O.
+        data["cto"] * 0.458,
     )
     points = tuple(p.astype(np.float32) for p in points)
     # Wavelength from wave number.
-    wave = (1e8 / data["wvno"]).astype(np.float32)  # Ang
-    sort_ind = np.argsort(wave)
-    wave = wave[sort_ind]
+    model_wave = (1e8 / data["wvno"]).astype(np.float32)  # Ang
+    model_wave = model_wave[::-1]  # Reverse to sort by wavelength.
+    assert np.all(model_wave[1:] >= model_wave[:-1])
+    new_wave = trim_wavelength_coverage(LOWER_RES_WAVE, model_wave)
     data.close()
     del data
 
@@ -499,22 +618,24 @@ def build_sonora_ph3(
         # Reshape all but the last dimension to flat for batch indexing.
         flux = flux.reshape((-1, original_shape[-1]))
         phot = np.empty((flux.shape[0], len(filters)), dtype=np.float32)
-        spec = np.empty((flux.shape[0], len(LOWER_RES_WAVE)), dtype=np.float32)
+        spec = np.empty((flux.shape[0], len(new_wave)), dtype=np.float32)
         batch_size = 2000
         for start in tqdm(range(0, flux.shape[0], batch_size), desc="reduce"):
             # Make sure we don't go out of bounds.
             stop = min(start + batch_size, flux.shape[0])
             batch = flux[start:stop].astype(np.float32) * 1e-8  # erg/s/cm^2/Ang
-            batch = batch[..., sort_ind]
+            batch = batch[..., ::-1]
             phot[start:stop] = _filter_fluxes(
-                wave, batch, filters
+                model_wave, batch, filters
             )  # erg/s/cm^2/Hz
-            spec[start:stop] = _resample_spectrum(wave, batch)  # erg/s/cm^2/Ang
+            spec[start:stop] = resample_spectrum(
+                new_wave, model_wave, batch
+            )  # erg/s/cm^2/Ang
         phot = phot.reshape(original_shape[:-1] + (len(filters),))
-        spec = spec.reshape(original_shape[:-1] + (len(LOWER_RES_WAVE),))
+        spec = spec.reshape(original_shape[:-1] + (len(new_wave),))
         del flux
     phot *= 1e23 * 1e9  # nJy
-    spec = (_flambda_to_fnu(LOWER_RES_WAVE, spec) * 1e23 * 1e9).astype(
+    spec = (flambda_to_fnu(new_wave, spec) * 1e23 * 1e9).astype(
         np.float32
     )  # nJy
     return ModelGrid(
@@ -525,7 +646,7 @@ def build_sonora_ph3(
         model_name="SonoraElfOwlPH3",
         fill_method=None,
         filters=tuple(filter_names),
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 
@@ -606,6 +727,8 @@ def build_atmo2020(
 
     path = Path(path)
     values = []
+    model_wave = None
+    new_wave = LOWER_RES_WAVE
     for dir_name in ["grid_m1.0", "grid_m0.5", "grid_p0", "grid_p0.3"]:
         dir = path / dir_name
         glob = list(dir.glob("spec*"))
@@ -614,13 +737,16 @@ def build_atmo2020(
             data = pd.read_csv(
                 file_path, sep=" ", comment="#", header=None, engine="c"
             ).values
-            wave = data[:, 0] * 1e4  # Ang
+            if model_wave is None:
+                model_wave = data[:, 0] * 1e4  # Ang
+                assert np.all(model_wave[1:] >= model_wave[:-1])
+                new_wave = trim_wavelength_coverage(LOWER_RES_WAVE, model_wave)
             flux = data[:, 1] * 1e-1  # erg/s/cm^2/Ang
             arrays = (
-                _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
-                _flambda_to_fnu(
-                    LOWER_RES_WAVE,  # Ang
-                    _resample_spectrum(wave, flux),  # erg/s/cm^2/Ang
+                _filter_fluxes(model_wave, flux, filters) * 1e23 * 1e9,  # nJy
+                flambda_to_fnu(
+                    new_wave,  # Ang
+                    resample_spectrum(new_wave, model_wave, flux),
                 )
                 * 1e23
                 * 1e9,  # nJy
@@ -635,7 +761,7 @@ def build_atmo2020(
         filter_names=filter_names,
         axes=["teff", "logg", "mh"],
         model_name="ATMO2020",
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 
@@ -689,6 +815,8 @@ def build_lowz(
     index = pd.read_csv(index_path).set_index("FILENAME")
 
     values = []
+    model_wave = None
+    new_wave = LOWER_RES_WAVE
     with (
         ProgressByteReader.open(models_path)
         if progress_bar
@@ -714,13 +842,20 @@ def build_lowz(
                 data = pd.read_csv(
                     stream, sep=" ", comment="#", header=None, engine="c"
                 ).values
-                wave = data[:, 0] * 1e4
+                if model_wave is None:
+                    model_wave = data[:, 0] * 1e4
+                    assert np.all(model_wave[1:] >= model_wave[:-1])
+                    new_wave = trim_wavelength_coverage(
+                        LOWER_RES_WAVE, model_wave
+                    )
                 flux = data[:, 1] * 1e-7  # erg/s/cm^2/Ang
                 arrays = (
-                    _filter_fluxes(wave, flux, filters) * 1e23 * 1e9,  # nJy
-                    _flambda_to_fnu(
-                        LOWER_RES_WAVE,  # Ang
-                        _resample_spectrum(wave, flux),  # erg/s/cm^2/Ang
+                    _filter_fluxes(model_wave, flux, filters)
+                    * 1e23
+                    * 1e9,  # nJy
+                    flambda_to_fnu(
+                        new_wave,  # Ang
+                        resample_spectrum(new_wave, model_wave, flux),
                     )
                     * 1e23
                     * 1e9,  # nJy
@@ -731,7 +866,7 @@ def build_lowz(
         filter_names=filter_names,
         axes=["teff", "logg", "kzz", "mh", "co"],
         model_name="LOWZ",
-        wave=LOWER_RES_WAVE,
+        wave=new_wave,
     )
 
 

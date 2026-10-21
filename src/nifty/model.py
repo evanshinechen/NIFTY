@@ -10,8 +10,10 @@ from typing import Self
 
 import numpy as np
 import numpy.typing as npt
-from scipy.interpolate import RegularGridInterpolator, interp1d
+from scipy.interpolate import RegularGridInterpolator
 from tqdm import tqdm
+
+from .spectra import flambda_to_fnu, fnu_to_flambda, resample_spectrum
 
 __all__ = ["IndexMap", "Model", "ModelGrid", "linear_teff"]
 
@@ -197,27 +199,27 @@ class ModelGrid:
         )
 
     def with_wave(self, wave: npt.NDArray[np.float32]):
-        """A new ModelGrid object with spectroscopy using a difference wave.
+        """Create a ModelGrid with spectroscopy on a new wavelength grid.
 
         Parameters
         ----------
-        wave : ndarray
-            Wave to resample ModelGrid.
+        wave : ndarray of shape (W,)
+            Target wavelength grid in Angstroms.
 
         Returns
         -------
         resampled_model_grid : ModelGrid
-            The model_grid resampled to new filters or a new wave.
+            Model grid with spectroscopy resampled onto wave.
 
         Notes
         -----
-        The wave is resampled by linear interpolation. The difference in flux
-        conservation is negligible compared to the error of grid interpolation.
+        Spectra are resampled with conservation of integrated flux. Wavelength
+        bins outside the original spectrum are filled with NaN.
         """
         return ModelGrid(
             points=self.points,
             phot=self.phot,
-            spec=_resample_spectrum(wave, self.wave, self.spec),
+            spec=_resample_model_spectrum(wave, self.wave, self.spec),
             axes=self.axes,
             model_name=self.model_name,
             fill_method=self.fill_method,
@@ -303,6 +305,8 @@ class Model:
         cls,
         model_grid: ModelGrid,
         wave: npt.NDArray[np.float32] | None = None,
+        *,
+        fit_mask: npt.NDArray[np.bool_] | None = None,
     ) -> Self:
         """
         Create a Model from the spectroscopy data in a ModelGrid.
@@ -313,9 +317,12 @@ class Model:
         ----------
         model_grid : ModelGrid
             ModelGrid used to create the interpolator.
-        wave : ndarray, optional
-            New wave to resample model_grid data. If not provided, the wave is
-            not changed from what is in the model_grid.
+        wave : ndarray of shape (W,), optional
+            Target wavelength grid in Angstroms. If not provided, use the
+            wavelength grid from model_grid.
+        fit_mask : ndarray of bool of shape (W,), optional
+            Select wavelength bins for the fitted model after resampling onto
+            the complete target wavelength grid.
 
         Returns
         -------
@@ -323,9 +330,13 @@ class Model:
             Model from spectroscopy data.
         """
         if wave is not None:
-            values = _resample_spectrum(wave, model_grid.wave, model_grid.spec)
+            values = _resample_model_spectrum(
+                wave, model_grid.wave, model_grid.spec
+            )
         else:
             values = model_grid.spec
+        if fit_mask is not None:
+            values = values[..., fit_mask]
         interp = RegularGridInterpolator(
             model_grid.points,
             values,
@@ -361,19 +372,43 @@ class Model:
         ]
         return model_flux
 
+    def _slice_outputs(self, start: int, stop: int) -> Self:
+        """Return a model over a view of the selected output bins."""
+        interp = RegularGridInterpolator(
+            self.interp.grid,
+            self.interp.values[..., start:stop],
+            method=self.interp.method,
+            bounds_error=self.interp.bounds_error,
+            fill_value=self.interp.fill_value,
+        )
+        return self.__class__(interp, self.axes_map)
 
-def _resample_spectrum(
+
+def _resample_model_spectrum(
     new_wave: npt.NDArray[np.float32],
     wave: npt.NDArray[np.float32],
     flux: npt.NDArray[np.float32],
 ) -> npt.NDArray[np.float32]:
-    """
-    Resample the spectrum of a flux data grid.
+    """Resample model grid F_nu spectra.
 
-    Uses the last axis of flux as the spectrum.
+    Parameters
+    ----------
+    new_wave : ndarray of shape (M,)
+        Target wavelength grid in Angstroms.
+    wave : ndarray of shape (N,)
+        Source wavelength grid in Angstroms.
+    flux : ndarray of shape (..., N)
+        Model grid F_nu spectra.
+
+    Returns
+    -------
+    resampled : ndarray of shape (..., M)
+        Resampled F_nu spectra. Bins outside the source wavelength
+        coverage contain NaN.
     """
-    interp = interp1d(wave, flux, axis=-1, fill_value="extrapolate")
-    return interp(new_wave)
+    flambda = fnu_to_flambda(wave, flux.astype(np.float64))
+    resampled = resample_spectrum(new_wave, wave, flambda)
+    return (flambda_to_fnu(new_wave, resampled)).astype(np.float32)
 
 
 def _change_filters(
@@ -428,7 +463,7 @@ def fill_point(
             raise ValueError(
                 "Unable to construct hypercube: "
                 "all axes must have a length of at least 3. "
-                f"Recieved axis lengths {values.shape[:-1]}."
+                f"Received axis lengths {values.shape[:-1]}."
             )
         start = coord - 1
         # Shift the hypercube if it goes out of bounds.

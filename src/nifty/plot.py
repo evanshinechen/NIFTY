@@ -17,7 +17,7 @@ LABELS = {
     "logg": r"$\mathrm{log}_{10} \left( g \right)$",
     "kzz": r"$\mathrm{log}_{10} \left( K_{\mathrm{zz}} \right)$",
     "mh": r"[M/H]",
-    "co": r"[C/O]",
+    "co": r"C/O",
     "d": r"$d/\mathrm{pc}$",
 }
 
@@ -252,7 +252,7 @@ def plot_spectrum(
     obj_error : ndarray
         Object spectroscopic flux error.
     valid_flux : ndarray
-        Boolean mask of valid object fluxes.
+        Boolean mask of object fluxes to display.
     obj_id : int
         Object ID number.
     model_wave : ndarray
@@ -273,10 +273,12 @@ def plot_spectrum(
     """
     wave = wave / 1e4  # um
     model_wave = model_wave / 1e4  # um
+    valid_error = valid_flux & np.isfinite(obj_error) & (obj_error > 0)
     ax.fill_between(
-        wave[valid_flux],
-        (obj_flux - obj_error)[valid_flux],
-        (obj_flux + obj_error)[valid_flux],
+        wave,
+        np.where(valid_error, obj_flux - obj_error, np.nan),
+        np.where(valid_error, obj_flux + obj_error, np.nan),
+        where=valid_error,
         step="mid",
         color="black",
         alpha=0.2,
@@ -286,8 +288,8 @@ def plot_spectrum(
         zorder=14,
     )
     ax.step(
-        wave[valid_flux],
-        obj_flux[valid_flux],
+        wave,
+        np.where(valid_flux, obj_flux, np.nan),
         where="mid",
         color="black",
         alpha=0.5,
@@ -322,15 +324,25 @@ def plot_spectrum(
     ax.set_title(f"Source ID {obj_id}", fontsize=15)
     xlim_min, xlim_max = 0.8, 5.2
     ax.set_xlim(xlim_min, xlim_max)
-    in_range = obj_flux[valid_flux][
-        (wave[valid_flux] > xlim_min) & (wave[valid_flux] < xlim_max)
-    ]
-    if in_range.size == 0:
-        ylim_max = 1
-        ylim_min = -0.1
-    else:
-        ylim_max = 1.2 * np.max(in_range)
-        ylim_min = -0.1 * ylim_max
+    observed_in_view = (wave >= xlim_min) & (wave <= xlim_max)
+    model_in_view = (model_wave >= xlim_min) & (model_wave <= xlim_max)
+    visible_flux = valid_flux & observed_in_view
+    visible_error = valid_error & observed_in_view
+    shown_flux = np.concatenate(
+        (
+            obj_flux[visible_flux],
+            (obj_flux - obj_error)[visible_error],
+            (obj_flux + obj_error)[visible_error],
+            model_flux_lower[model_in_view],
+            model_flux_upper[model_in_view],
+            np.array([0.0]),
+        )
+    )
+    ylim_min = float(np.min(shown_flux))
+    ylim_max = float(np.max(shown_flux))
+    padding = 0.1 * (ylim_max - ylim_min) or 0.1
+    ylim_min -= padding
+    ylim_max += padding
     ax.plot(
         [xlim_min, xlim_max],
         [0, 0],
